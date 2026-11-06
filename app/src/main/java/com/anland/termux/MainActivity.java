@@ -382,7 +382,7 @@ public class MainActivity extends Activity
 
         // Single show/hide keyboard toggle, bottom-left; icon ^ (show) / v (hide).
         keyboardToggle = new android.widget.TextView(this);
-        keyboardToggle.setText("\u2303"); // ^ (up caret: keyboard hidden, tap to show)
+        keyboardToggle.setText("\u2304"); // v (down caret: keyboard hidden, tap to show)
         keyboardToggle.setTextColor(android.graphics.Color.WHITE);
         keyboardToggle.setTextSize(22);
         keyboardToggle.setGravity(android.view.Gravity.CENTER);
@@ -1263,14 +1263,14 @@ public class MainActivity extends Activity
         if (anlandKeyboard.getVisibility() == View.VISIBLE) {
             anlandKeyboard.setVisibility(View.GONE);
             if (keyboardToggle != null)
-                keyboardToggle.setText("\u2303"); // ^ : keyboard hidden, tap to show
+                keyboardToggle.setText("\u2304"); // v : keyboard hidden, tap to show
         } else {
             Log.d("VirtualKeyboard", "toggle: showing keyboard, mRoot="
                     + mRoot.getWidth() + "x" + mRoot.getHeight());
             anlandKeyboard.setVisibility(View.VISIBLE);
             anlandKeyboard.bringToFront();
             if (keyboardToggle != null)
-                keyboardToggle.setText("\u2304"); // v : keyboard shown, tap to hide
+                keyboardToggle.setText("\u2303"); // ^ : keyboard shown, tap to hide
             // Re-position it (in case screen size changed)
             positionVirtualKeyboard();
             // Hide the system IME to avoid overlap with the floating keyboard.

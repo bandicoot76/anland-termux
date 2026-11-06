@@ -92,10 +92,7 @@ public final class AnlandKeyboardHost extends FrameLayout {
         mResizeGrip.setBackgroundColor(0x88FFFFFF);
         mResizeGrip.setVisibility(View.GONE);
 
-        addView(mKeyboard, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                Gravity.BOTTOM));
+        // buildKeyboardView() already added mKeyboard as the first child.
         addView(mDragHandle, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 dp(HANDLE_DP),
