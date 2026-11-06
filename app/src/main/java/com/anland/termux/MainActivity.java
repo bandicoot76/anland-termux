@@ -385,7 +385,7 @@ public class MainActivity extends Activity
         );
         // Lift the docked keyboard above the gesture/navigation zone so its bottom
         // row is not cut off (ROG Phone 8). Floating mode positions itself via X/Y.
-        kbLp.bottomMargin = dpToPx(28);
+        kbLp.bottomMargin = dpToPx(30);
         root.addView(anlandKeyboard, kbLp);
 
         // Bottom-left show/hide keyboard toggle, always visible; rides above the keyboard.
@@ -1298,6 +1298,9 @@ public class MainActivity extends Activity
                     + mRoot.getWidth() + "x" + mRoot.getHeight());
             anlandKeyboard.setVisibility(View.VISIBLE);
             anlandKeyboard.bringToFront();
+            // Keep the controls above the keyboard, or bringToFront() would bury them.
+            if (bottomControls != null) bottomControls.bringToFront();
+            if (keyboardSettingsBtn != null) keyboardSettingsBtn.bringToFront();
             if (keyboardToggle != null)
                 keyboardToggle.setText("^"); // ^ : keyboard shown, tap to hide
             // Re-position it (in case screen size changed)
@@ -1333,6 +1336,9 @@ public class MainActivity extends Activity
     private void moveBottomControls(int keyboardHeight) {
         if (bottomControls == null) return;
         bottomControls.setTranslationY(-keyboardHeight);
+        // Keep the right-side settings button riding at the same height as the cluster.
+        if (keyboardSettingsBtn != null)
+            keyboardSettingsBtn.setTranslationY(-keyboardHeight);
     }
 
     // Replace the bar with a freshly-parsed one after the user edits the layout in
