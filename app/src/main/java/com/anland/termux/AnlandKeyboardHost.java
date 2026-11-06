@@ -3,6 +3,7 @@ package com.anland.termux;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -58,6 +59,7 @@ public final class AnlandKeyboardHost extends FrameLayout {
     private Keyboard2View mKeyboard;
     private final View mDragHandle;
     private final View mResizeGrip;
+    private final android.widget.TextView mMenuBtn;   // Gboard-style menu, top-left
 
     private int mTemplateIndex;
 
@@ -112,6 +114,15 @@ public final class AnlandKeyboardHost extends FrameLayout {
         mResizeGrip.setBackgroundColor(0x88FFFFFF);
         mResizeGrip.setVisibility(View.GONE);
 
+        mMenuBtn = new android.widget.TextView(context);
+        mMenuBtn.setText("☰");
+        mMenuBtn.setTextColor(0xFFFFFFFF);
+        mMenuBtn.setTextSize(16);
+        mMenuBtn.setGravity(Gravity.CENTER);
+        mMenuBtn.setPadding(dp(10), dp(4), dp(10), dp(4));
+        mMenuBtn.setBackgroundColor(0x55000000);
+        mMenuBtn.setOnClickListener(v -> showSettingsMenu());
+
         // buildKeyboardView() already added mKeyboard as the first child.
         addView(mDragHandle, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -119,6 +130,10 @@ public final class AnlandKeyboardHost extends FrameLayout {
                 Gravity.TOP));
         addView(mResizeGrip, new FrameLayout.LayoutParams(
                 dp(GRIP_DP), dp(GRIP_DP), Gravity.BOTTOM | Gravity.END));
+        addView(mMenuBtn, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.START));
 
         attachDrag(mDragHandle);
         attachResize(mResizeGrip);
@@ -276,6 +291,15 @@ public final class AnlandKeyboardHost extends FrameLayout {
         title.setPadding(dp(16), dp(14), dp(16), dp(6));
         panel.addView(title);
 
+        // Clipboard / editing actions, Gboard-style at the top of the menu.
+        LinearLayout clip = new LinearLayout(getContext());
+        clip.setOrientation(LinearLayout.HORIZONTAL);
+        clip.setGravity(Gravity.CENTER);
+        clip.addView(menuAction("Copy", () -> { popup.dismiss(); sendClipChord(KeyEvent.KEYCODE_C); }));
+        clip.addView(menuAction("Paste", () -> { popup.dismiss(); sendClipChord(KeyEvent.KEYCODE_V); }));
+        clip.addView(menuAction("Select all", () -> { popup.dismiss(); sendClipChord(KeyEvent.KEYCODE_A); }));
+        panel.addView(clip);
+
         panel.addView(makeMenuRow("Layout", getLayoutLabel(), () -> {
             popup.dismiss();
             switchLayout();
@@ -335,6 +359,29 @@ public final class AnlandKeyboardHost extends FrameLayout {
 
         row.setOnClickListener(clk -> onClick.run());
         return row;
+    }
+
+    /** A compact Gboard-style toolbar action button. */
+    private TextView menuAction(String label, Runnable onClick) {
+        TextView b = new TextView(getContext());
+        b.setText(label);
+        b.setTextColor(0xFFFFFFFF);
+        b.setTextSize(13);
+        b.setGravity(Gravity.CENTER);
+        b.setPadding(dp(14), dp(8), dp(14), dp(8));
+        b.setOnClickListener(clk -> onClick.run());
+        return b;
+    }
+
+    /** Send a Ctrl+key chord to the compositor (copy/paste/select-all). */
+    private void sendClipChord(int androidKeyCode) {
+        int key = KeyCodeMapper.getScanCode(androidKeyCode);
+        int ctrl = KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_CTRL_LEFT);
+        if (key < 0 || ctrl < 0) return;
+        Native.nativeSendKey(0, ctrl);
+        Native.nativeSendKey(0, key);
+        Native.nativeSendKey(1, key);
+        Native.nativeSendKey(1, ctrl);
     }
 
     private String getLayoutLabel() {
@@ -453,6 +500,9 @@ public final class AnlandKeyboardHost extends FrameLayout {
 
         mDragHandle.measure(exactW, MeasureSpec.makeMeasureSpec(handleH, MeasureSpec.EXACTLY));
         mKeyboard.measure(exactW, atMostH);
+        mMenuBtn.measure(
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
 
         int totalH = handleH + mKeyboard.getMeasuredHeight();
         setMeasuredDimension(
@@ -467,6 +517,10 @@ public final class AnlandKeyboardHost extends FrameLayout {
         int handleH = dp(HANDLE_DP);
         mDragHandle.layout(0, 0, width, handleH);
         mKeyboard.layout(0, handleH, width, height);
+
+        int menuW = mMenuBtn.getMeasuredWidth();
+        int menuH = mMenuBtn.getMeasuredHeight();
+        mMenuBtn.layout(dp(4), handleH + dp(4), dp(4) + menuW, handleH + dp(4) + menuH);
 
         int grip = dp(GRIP_DP);
         mResizeGrip.layout(width - grip, height - grip, width, height);
