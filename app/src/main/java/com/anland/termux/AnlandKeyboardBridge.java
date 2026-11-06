@@ -15,48 +15,41 @@ import juloo.keyboard2.Pointers;
  * Bridges the embedded {@link juloo.keyboard2.Keyboard2View} (Unexpected Keyboard) into
  * Anland's native input pipeline.
  *
- * <p>The keyboard delivers <em>resolved</em> {@link KeyValue}s through
- * {@link Config.IKeyEventHandler}. A resolved value is either a final {@code Char}
- * (Shift already applied by the keyboard), an Android {@code Keyevent} (F-keys, arrows,
- * Tab, Esc, Enter, and letters converted under Ctrl/Alt), a modifier, an {@code Editing}
- * action (space / backspace), an {@code Event}, or a {@code String}.</p>
+ * <p>The keyboard delivers <em>resolved</em> {@link KeyValue}s on
+ * {@link Config.IKeyEventHandler#key_up(KeyValue, Pointers.Modifiers)} with the modifiers
+ * that were held when the key was released — the same contract termux-launcher relies on:
+ * {@code key_down} carries only sliders; the full, modifier-resolved action fires on
+ * {@code key_up}. A resolved value is a final {@code Char} (Shift already applied), an
+ * Android {@code Keyevent} (F-keys, arrows, Tab, Esc, Enter, and letters/keys converted
+ * under Ctrl/Alt), an {@code Editing} action (space / backspace), an {@code Event}
+ * (Enter / CapsLock), a {@code String}, or a {@code Macro} (the Fn-layer ^C / ^D).</p>
  *
  * <p>Anland's display consumer expects <em>raw Linux evdev scancodes</em> on
  * {@link Native#nativeSendKey(int, int)} — exactly what {@link KeyCodeMapper} produces
  * from an Android key code — and UTF-8 text on {@link Native#nativeSendTextInput(byte[])}.
- * This class performs that conversion.</p>
- *
- * <p>Modifier keys (Shift/Ctrl/Alt) are managed by the keyboard's own latch state and are
- * reported through {@link #mods_changed(Pointers.Modifiers)}. They are reproduced here as
- * a self-contained "chord" around each key press (modifier-down, key-down, key-up,
- * modifier-up), so a latched Ctrl behaves as a sticky Ctrl on the Wayland side without
- * needing to hold persistent key state.</p>
+ * This class performs that conversion, reproducing each key as a self-contained
+ * down/up chord with the held modifiers wrapped around it (a sticky Ctrl reads as
+ * Ctrl+key on the Wayland side).</p>
  */
 public final class AnlandKeyboardBridge implements Config.IKeyEventHandler {
 
     private static final String TAG = "AnlandKeyboard";
 
-    // Linux evdev modifier scancodes (mirrors KeyCodeMapper / input-event-codes.h).
-    private static final int EV_KEY_LEFTSHIFT = 42;
-    private static final int EV_KEY_LEFTCTRL = 29;
-    private static final int EV_KEY_LEFTALT = 56;
-    private static final int EV_KEY_LEFTMETA = 125;
+    // Linux evdev modifier scancodes (mirrors KeyCodeMapper / linux input-event-codes.h).
+    private static final int EV_LEFTSHIFT = 42;
+    private static final int EV_LEFTCTRL = 29;
+    private static final int EV_LEFTALT = 56;
+    private static final int EV_LEFTMETA = 125;
 
-    /** Current modifier latch state, as last reported by {@code mods_changed}. */
-    private boolean mCtrl;
-    private boolean mAlt;
-    private boolean mShift;
-    private boolean mMeta;
-
-    // --- Char -> Android key code reverse map (US QWERTY base row) ---
-    // The Value field is the base (unshifted) Android key code; the shift flag is held
-    // separately in SHIFTED_CHARS. This is the canonical mapping the keyboard's own
-    // `turn_into_keyevent` uses for letters/digits/symbols.
+    // -----------------------------------------------------------------------------------
+    // Char -> (Android base key code, needs-shift) reverse maps for the US QWERTY base row.
+    // A Char arrives already Shift-resolved by the keyboard (uppercase / symbol), so the
+    // shift requirement is derived purely from the character, never from a held Shift latch.
+    // -----------------------------------------------------------------------------------
     private static final Map<Character, Integer> CHAR_TO_KEYCODE = new HashMap<>();
     private static final Map<Character, Integer> SHIFTED_CHAR_TO_KEYCODE = new HashMap<>();
 
     static {
-        // Letters (key code of the base letter, case-insensitive here).
         char[] lower = "abcdefghijklmnopqrstuvwxyz".toCharArray();
         int[] codes = {
             KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_B, KeyEvent.KEYCODE_C, KeyEvent.KEYCODE_D,
@@ -72,7 +65,6 @@ public final class AnlandKeyboardBridge implements Config.IKeyEventHandler {
             SHIFTED_CHAR_TO_KEYCODE.put(Character.toUpperCase(lower[i]), codes[i]);
         }
 
-        // Unshifted symbols (base key).
         CHAR_TO_KEYCODE.put('`', KeyEvent.KEYCODE_GRAVE);
         CHAR_TO_KEYCODE.put('1', KeyEvent.KEYCODE_1);
         CHAR_TO_KEYCODE.put('2', KeyEvent.KEYCODE_2);
@@ -94,9 +86,7 @@ public final class AnlandKeyboardBridge implements Config.IKeyEventHandler {
         CHAR_TO_KEYCODE.put(',', KeyEvent.KEYCODE_COMMA);
         CHAR_TO_KEYCODE.put('.', KeyEvent.KEYCODE_PERIOD);
         CHAR_TO_KEYCODE.put('/', KeyEvent.KEYCODE_SLASH);
-        CHAR_TO_KEYCODE.put(' ', KeyEvent.KEYCODE_SPACE);
 
-        // Shifted symbols (shift + base key).
         SHIFTED_CHAR_TO_KEYCODE.put('~', KeyEvent.KEYCODE_GRAVE);
         SHIFTED_CHAR_TO_KEYCODE.put('!', KeyEvent.KEYCODE_1);
         SHIFTED_CHAR_TO_KEYCODE.put('@', KeyEvent.KEYCODE_2);
@@ -122,28 +112,24 @@ public final class AnlandKeyboardBridge implements Config.IKeyEventHandler {
 
     @Override
     public void key_down(KeyValue value, boolean is_swipe) {
-        if (value == null)
-            return;
-        dispatchDown(value);
+        // The full action (with resolved modifiers) fires on key_up, matching termux-launcher.
+        // Sliders are continuous cursor gestures; they are not wired for the Wayland surface.
     }
 
     @Override
     public void key_up(KeyValue value, Pointers.Modifiers mods) {
         if (value == null)
             return;
-        dispatchUp(value);
+        boolean ctrl = mods != null && mods.has(KeyValue.Modifier.CTRL);
+        boolean alt = mods != null && mods.has(KeyValue.Modifier.ALT);
+        boolean shift = mods != null && mods.has(KeyValue.Modifier.SHIFT);
+        boolean meta = mods != null && mods.has(KeyValue.Modifier.META);
+        dispatchStroke(value, ctrl, alt, shift, meta);
     }
 
     @Override
     public void mods_changed(Pointers.Modifiers mods) {
-        if (mods == null) {
-            mCtrl = mAlt = mShift = mMeta = false;
-            return;
-        }
-        mCtrl = mods.has(KeyValue.Modifier.CTRL);
-        mAlt = mods.has(KeyValue.Modifier.ALT);
-        mShift = mods.has(KeyValue.Modifier.SHIFT);
-        mMeta = mods.has(KeyValue.Modifier.META);
+        // Modifier state is consumed directly from key_up's `mods`; nothing to cache.
     }
 
     @Override
@@ -156,198 +142,132 @@ public final class AnlandKeyboardBridge implements Config.IKeyEventHandler {
     // Dispatch
     // -----------------------------------------------------------------------------------
 
-    private void dispatchDown(KeyValue value) {
-        switch (value.getKind()) {
+    private void dispatchStroke(KeyValue v, boolean ctrl, boolean alt, boolean shift, boolean meta) {
+        switch (v.getKind()) {
             case Char:
-                downChar(value.getChar());
+                strokeChar(v.getChar(), ctrl, alt, meta);
                 break;
             case Keyevent:
-                downChord(value.getKeyevent());
+                strokeKeyevent(v.getKeyevent(), ctrl, alt, shift, meta);
                 break;
             case Editing:
-                downEditing(value.getEditing());
+                if (v.getEditing() == KeyValue.Editing.SPACE_BAR)
+                    strokeKeyevent(KeyEvent.KEYCODE_SPACE, ctrl, alt, shift, meta);
+                else if (v.getEditing() == KeyValue.Editing.BACKSPACE)
+                    strokeKeyevent(KeyEvent.KEYCODE_DEL, ctrl, alt, shift, meta);
                 break;
             case Event:
-                downEvent(value.getEvent());
+                if (v.getEvent() == KeyValue.Event.ACTION)
+                    strokeKeyevent(KeyEvent.KEYCODE_ENTER, ctrl, alt, shift, meta);
+                else if (v.getEvent() == KeyValue.Event.CAPS_LOCK)
+                    tapKeyevent(KeyEvent.KEYCODE_CAPS_LOCK);
                 break;
             case String:
-                Native.nativeSendTextInput(value.getString().getBytes(StandardCharsets.UTF_8));
+                Native.nativeSendTextInput(v.getString().getBytes(StandardCharsets.UTF_8));
                 break;
-            // Modifiers are latch-state only; the chord reproduces them. Macro/Compose/
-            // Placeholder/Slider/Hangul/Stateful/Launcher_tool need no evdev event here.
+            case Macro:
+                strokeMacro(v.getMacro());
+                break;
+            // Modifier: latch-state only; reproduced inside each chord.
+            // Compose/Placeholder/Slider/Hangul/Stateful/Launcher_tool: not forwarded.
             default:
                 break;
         }
     }
 
-    private void dispatchUp(KeyValue value) {
-        switch (value.getKind()) {
-            case Char:
-                upChar(value.getChar());
-                break;
-            case Keyevent:
-                upChord(value.getKeyevent());
-                break;
-            case Editing:
-                upEditing(value.getEditing());
-                break;
-            case Event:
-                upEvent(value.getEvent());
-                break;
-            default:
-                break;
+    private void strokeChar(char c, boolean ctrl, boolean alt, boolean meta) {
+        boolean[] shift = new boolean[1];
+        int evdev = charToEvdev(c, shift);
+        if (evdev < 0) {
+            Native.nativeSendTextInput(String.valueOf(c).getBytes(StandardCharsets.UTF_8));
+            return;
         }
+        chord(evdev, ctrl, alt, meta, shift[0]);
     }
 
-    // --- Char ---
-    // A char is already Shift-resolved by the keyboard, so shift is derived purely from the
-    // char (never from the live modifier latch) to avoid a double-shift.
-
-    private void downChar(char c) {
-        if (sendCharChord(c))
-            return; // Reproduced as an evdev chord.
-        // Non-ASCII / unmappable: fall back to a UTF-8 text input.
-        sendTextFallback(String.valueOf(c));
-    }
-
-    private void upChar(char c) {
-        // A text fallback has no key-up; an evdev chord is released transiently inside
-        // sendCharChord (down+up), so nothing to do here.
-    }
-
-    /** Sends a self-contained down/up chord for an ASCII char. Returns false if unmappable. */
-    private boolean sendCharChord(char c) {
-        Integer keyCode = CHAR_TO_KEYCODE.get(c);
-        if (keyCode != null) {
-            sendTap(keyCode, false);
-            return true;
-        }
-        keyCode = SHIFTED_CHAR_TO_KEYCODE.get(c);
-        if (keyCode != null) {
-            sendTap(keyCode, true);
-            return true;
-        }
-        return false;
-    }
-
-    // --- Keyevent ---
-    // A Keyevent appears for F-keys, arrows, Tab, Esc, Enter, and letters converted under
-    // Ctrl/Alt. It is reproduced as the raw key held within the live modifier latch.
-
-    private void downChord(int keyCode) {
+    private void strokeKeyevent(int keyCode, boolean ctrl, boolean alt, boolean shift, boolean meta) {
         int evdev = KeyCodeMapper.getScanCode(keyCode);
         if (evdev < 0) {
             Log.w(TAG, "Unmapped keyevent keycode=" + keyCode);
             return;
         }
-        pressModifiers(true);
-        Native.nativeSendKey(0, evdev);
+        chord(evdev, ctrl, alt, meta, shift);
     }
 
-    private void upChord(int keyCode) {
+    /** One-shot down/up tap of a keyevent scancode (no modifiers). */
+    private void tapKeyevent(int keyCode) {
         int evdev = KeyCodeMapper.getScanCode(keyCode);
         if (evdev < 0)
             return;
-        Native.nativeSendKey(1, evdev);
-        pressModifiers(false);
-    }
-
-    // --- Editing ---
-
-    private void downEditing(KeyValue.Editing editing) {
-        switch (editing) {
-            case SPACE_BAR:
-                Native.nativeSendKey(0, KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_SPACE));
-                break;
-            case BACKSPACE:
-                Native.nativeSendKey(0, KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_DEL));
-                break;
-            default:
-                break; // Clipboard / selection actions are not terminal input.
-        }
-    }
-
-    private void upEditing(KeyValue.Editing editing) {
-        switch (editing) {
-            case SPACE_BAR:
-                Native.nativeSendKey(1, KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_SPACE));
-                break;
-            case BACKSPACE:
-                Native.nativeSendKey(1, KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_DEL));
-                break;
-            default:
-                break;
-        }
-    }
-
-    // --- Event ---
-
-    private void downEvent(KeyValue.Event event) {
-        switch (event) {
-            case ACTION:
-                Native.nativeSendKey(0, KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_ENTER));
-                break;
-            case CAPS_LOCK:
-                Native.nativeSendKey(0, KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_CAPS_LOCK));
-                Native.nativeSendKey(1, KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_CAPS_LOCK));
-                break;
-            default:
-                break; // Layout switches / method pickers are keyboard-internal.
-        }
-    }
-
-    private void upEvent(KeyValue.Event event) {
-        switch (event) {
-            case ACTION:
-                Native.nativeSendKey(1, KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_ENTER));
-                break;
-            default:
-                break;
-        }
-    }
-
-    // -----------------------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------------------
-
-    /** Down+up a base key code, optionally holding Shift. */
-    private void sendTap(int keyCode, boolean withShift) {
-        int evdev = KeyCodeMapper.getScanCode(keyCode);
-        if (evdev < 0) {
-            sendTextFallbackFromKeycode(keyCode);
-            return;
-        }
-        if (withShift)
-            Native.nativeSendKey(0, EV_KEY_LEFTSHIFT);
         Native.nativeSendKey(0, evdev);
         Native.nativeSendKey(1, evdev);
-        if (withShift)
-            Native.nativeSendKey(1, EV_KEY_LEFTSHIFT);
     }
 
-    private void sendTextFallbackFromKeycode(int keyCode) {
-        // Best-effort: recover the printable character from the virtual keyboard map.
-        int c = android.view.KeyCharacterMap
-                .load(android.view.KeyCharacterMap.VIRTUAL_KEYBOARD)
-                .get(keyCode, 0);
-        if (c != 0)
-            sendTextFallback(String.valueOf((char) c));
+    /** Expands a macro such as the Fn-layer ^C = [Ctrl, c] into one modifier-chord. */
+    private void strokeMacro(KeyValue[] keys) {
+        boolean ctrl = false, alt = false, shift = false, meta = false;
+        KeyValue target = null;
+        for (KeyValue k : keys) {
+            if (k == null)
+                continue;
+            if (k.getKind() == KeyValue.Kind.Modifier) {
+                switch (k.getModifier()) {
+                    case CTRL: ctrl = true; break;
+                    case ALT: alt = true; break;
+                    case SHIFT: shift = true; break;
+                    case META: meta = true; break;
+                    default: break;
+                }
+            } else {
+                target = k;
+            }
+        }
+        if (target == null)
+            return;
+
+        if (target.getKind() == KeyValue.Kind.Char) {
+            strokeChar(target.getChar(), ctrl, alt, meta);
+        } else if (target.getKind() == KeyValue.Kind.Keyevent) {
+            strokeKeyevent(target.getKeyevent(), ctrl, alt, shift, meta);
+        } else if (target.getKind() == KeyValue.Kind.Editing) {
+            int code = target.getEditing() == KeyValue.Editing.SPACE_BAR
+                    ? KeyEvent.KEYCODE_SPACE
+                    : target.getEditing() == KeyValue.Editing.BACKSPACE
+                        ? KeyEvent.KEYCODE_DEL : -1;
+            if (code >= 0)
+                strokeKeyevent(code, ctrl, alt, shift, meta);
+        }
     }
 
-    private void sendTextFallback(String text) {
-        Native.nativeSendTextInput(text.getBytes(StandardCharsets.UTF_8));
+    // -----------------------------------------------------------------------------------
+    // Emission
+    // -----------------------------------------------------------------------------------
+
+    /** Resolved evdev scancode for a char + whether Shift must be held. -1 if unmappable. */
+    private int charToEvdev(char c, boolean[] needsShift) {
+        Integer base = CHAR_TO_KEYCODE.get(c);
+        boolean shift = false;
+        if (base == null) {
+            base = SHIFTED_CHAR_TO_KEYCODE.get(c);
+            shift = base != null;
+        }
+        if (base == null)
+            return -1;
+        needsShift[0] = shift;
+        return KeyCodeMapper.getScanCode(base);
     }
 
-    /** Press or release the live modifier latch as evdev modifier keys. */
-    private void pressModifiers(boolean down) {
-        int action = down ? 0 : 1;
-        if (mCtrl)
-            Native.nativeSendKey(action, EV_KEY_LEFTCTRL);
-        if (mAlt)
-            Native.nativeSendKey(action, EV_KEY_LEFTALT);
-        if (mShift)
-            Native.nativeSendKey(action, EV_KEY_LEFTSHIFT);
-        if (mMeta)
-            Native.nativeSendKey(action, EV_KEY_LEFTMETA);
+    /** Down+up a scancode with the given modifiers held around it. */
+    private void chord(int evdev, boolean ctrl, boolean alt, boolean meta, boolean shift) {
+        if (ctrl) Native.nativeSendKey(0, EV_LEFTCTRL);
+        if (alt)  Native.nativeSendKey(0, EV_LEFTALT);
+        if (meta) Native.nativeSendKey(0, EV_LEFTMETA);
+        if (shift) Native.nativeSendKey(0, EV_LEFTSHIFT);
+        Native.nativeSendKey(0, evdev);
+        Native.nativeSendKey(1, evdev);
+        if (shift) Native.nativeSendKey(1, EV_LEFTSHIFT);
+        if (meta) Native.nativeSendKey(1, EV_LEFTMETA);
+        if (alt)  Native.nativeSendKey(1, EV_LEFTALT);
+        if (ctrl) Native.nativeSendKey(1, EV_LEFTCTRL);
     }
 }
