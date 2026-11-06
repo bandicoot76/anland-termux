@@ -85,6 +85,7 @@ public final class AnlandKeyboardHost extends FrameLayout {
     private String mThemeMode = "dark";
     // A user-edited layout string, or null to use the bundled template.
     private String mCustomLayout;
+    private boolean mOneHanded;   // narrow floating keyboard for one-handed use
 
     public AnlandKeyboardHost(Context context) {
         super(context);
@@ -104,6 +105,7 @@ public final class AnlandKeyboardHost extends FrameLayout {
         mHapticsEnabled = prefs.getBoolean("haptics", true);
         mThemeMode = prefs.getString("theme", "dark");
         mCustomLayout = prefs.getString("custom_layout", null);
+        mOneHanded = prefs.getBoolean("one_handed", false);
 
         buildKeyboardView();
 
@@ -308,6 +310,19 @@ public final class AnlandKeyboardHost extends FrameLayout {
         clip2.addView(menuAction("Redo", () -> { popup.dismiss(); sendClipChord(KeyEvent.KEYCODE_Y); }));
         panel.addView(clip2);
 
+        panel.addView(makeMenuRow("Emoji", "\uD83D\uDE00", () -> {
+            popup.dismiss();
+            showEmojiPanel();
+        }));
+        panel.addView(makeMenuRow("One-handed", mOneHanded ? "On" : "Off", () -> {
+            popup.dismiss();
+            toggleOneHanded();
+        }));
+        panel.addView(makeMenuRow("Next language", getLayoutLabel(), () -> {
+            popup.dismiss();
+            switchLayout();
+        }));
+
         panel.addView(makeMenuRow("Layout", getLayoutLabel(), () -> {
             popup.dismiss();
             switchLayout();
@@ -390,6 +405,72 @@ public final class AnlandKeyboardHost extends FrameLayout {
         Native.nativeSendKey(0, key);
         Native.nativeSendKey(1, key);
         Native.nativeSendKey(1, ctrl);
+    }
+
+    /** A small emoji pad that types the picked emoji as UTF-8 text to the compositor. */
+    private void showEmojiPanel() {
+        final PopupWindow popup = new PopupWindow(this);
+        LinearLayout panel = new LinearLayout(getContext());
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackgroundColor(0xF01B1B1B);
+        panel.setPadding(dp(12), dp(12), dp(12), dp(12));
+
+        TextView title = new TextView(getContext());
+        title.setText("Emoji");
+        title.setTextColor(0xFFFFFFFF);
+        title.setTextSize(15);
+        title.setPadding(0, 0, 0, dp(8));
+        panel.addView(title);
+
+        final String[] emojis = {
+            "😀", "😂", "😊", "😍", "😎", "😭", "😡", "👍",
+            "👎", "🙏", "❤️", "🔥", "✨", "🎉", "⭐", "✅",
+            "❌", "❓", "❗", "💯", "🐱", "🐶", "🌸", "🍕"
+        };
+        LinearLayout grid = new LinearLayout(getContext());
+        grid.setOrientation(LinearLayout.HORIZONTAL);
+        final LinearLayout[] rows = new LinearLayout[3];
+        for (int r = 0; r < 3; r++) {
+            rows[r] = new LinearLayout(getContext());
+            rows[r].setOrientation(LinearLayout.HORIZONTAL);
+            grid.addView(rows[r]);
+        }
+        for (int i = 0; i < emojis.length; i++) {
+            final String e = emojis[i];
+            TextView b = new TextView(getContext());
+            b.setText(e);
+            b.setTextSize(22);
+            b.setPadding(dp(8), dp(4), dp(8), dp(4));
+            b.setOnClickListener(clk -> {
+                byte[] utf8 = e.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                Native.nativeSendTextInput(utf8);
+                popup.dismiss();
+            });
+            rows[i / 8].addView(b);
+        }
+        panel.addView(grid);
+
+        popup.setContentView(panel);
+        popup.setWidth(dp(320));
+        popup.setHeight(LinearLayout.LayoutParams.WRAP_CONTENT);
+        popup.setFocusable(true);
+        popup.setOutsideTouchable(true);
+        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0));
+        popup.showAtLocation(this, Gravity.CENTER, 0, -dp(40));
+    }
+
+    /** Toggle a narrow one-handed floating layout. */
+    private void toggleOneHanded() {
+        mOneHanded = !mOneHanded;
+        persistSetting("one_handed", mOneHanded);
+        if (mOneHanded) {
+            mFloating = true;
+            mFloatingWidthDp = 200;
+            setFloating(true);
+        } else {
+            dock();
+        }
+        requestLayout();
     }
 
     private String getLayoutLabel() {

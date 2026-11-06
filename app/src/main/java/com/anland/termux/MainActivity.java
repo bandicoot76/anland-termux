@@ -381,6 +381,9 @@ public class MainActivity extends Activity
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM
         );
+        // Small clearance above the physical bottom so the docked keyboard sits just
+        // above the desktop taskbar instead of riding the very screen edge.
+        kbLp.bottomMargin = dpToPx(12);
         root.addView(anlandKeyboard, kbLp);
         mHudOverlay = new HudOverlayView(this,
                 getSharedPreferences(PREFS_NAME, MODE_PRIVATE),
