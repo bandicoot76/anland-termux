@@ -1347,7 +1347,7 @@ public class MainActivity extends Activity
     private void showNavBar() {
         if (bottomControls == null) return;
         bottomControls.animate().translationY(0f).alpha(1f).setDuration(160).start();
-        scheduleNavBarHide();
+        // Never auto-hide here: the caller decides (keyboard shown = stay visible).
     }
 
     private void hideNavBar() {
@@ -1357,8 +1357,12 @@ public class MainActivity extends Activity
                 .setDuration(160).start();
     }
 
-    /** Re-arm the 2-second auto-hide timer from the last interaction. */
+    /** Re-arm the 2-second auto-hide timer, but never while the keyboard is shown. */
     private void scheduleNavBarHide() {
+        if (anlandKeyboard != null && anlandKeyboard.getVisibility() == View.VISIBLE) {
+            cancelNavBarHide();
+            return;
+        }
         mNavBarHandler.removeCallbacks(mNavBarHideRunnable);
         mNavBarHideRunnable = this::hideNavBar;
         mNavBarHandler.postDelayed(mNavBarHideRunnable, 2000);
