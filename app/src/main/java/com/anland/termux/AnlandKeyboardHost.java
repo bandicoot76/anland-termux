@@ -9,6 +9,7 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -172,16 +173,19 @@ public final class AnlandKeyboardHost extends FrameLayout {
                 if (n == 0) return;
                 mRingIndex = (mRingIndex + delta + n) % n;
                 rebuildAndRequestLayout();
+                announceLayout();
             }
             @Override public void showNumeric() {
                 if (mModalNumeric) return;
                 mModalNumeric = true;
                 rebuildAndRequestLayout();
+                announceLayout();
             }
             @Override public void showText() {
                 if (!mModalNumeric) return;
                 mModalNumeric = false;
                 rebuildAndRequestLayout();
+                announceLayout();
             }
             @Override public void hideKeyboard() {
                 setVisibility(View.GONE);
@@ -210,6 +214,12 @@ public final class AnlandKeyboardHost extends FrameLayout {
         mRingIndex = (mRingIndex + 1) % n;
         buildKeyboardView();
         requestLayout();
+        announceLayout();
+    }
+
+    /** Show a short toast naming the just-selected layout, matching termux-launcher's notice. */
+    private void announceLayout() {
+        Toast.makeText(getContext(), "Layout: " + getLayoutLabel(), Toast.LENGTH_SHORT).show();
     }
 
     // -----------------------------------------------------------------------------------
@@ -427,6 +437,7 @@ public final class AnlandKeyboardHost extends FrameLayout {
             idx = 0;
         mRingIndex = idx;
         rebuildAndRequestLayout();
+        announceLayout();
     }
 
     private void persistSetting(String key, boolean value) {
