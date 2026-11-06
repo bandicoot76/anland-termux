@@ -389,7 +389,7 @@ public class MainActivity extends Activity
         bottomControls.setBackgroundColor(0xAA000000);
         bottomControls.setPadding(dpToPx(4), dpToPx(2), dpToPx(4), dpToPx(2));
 
-        keyboardToggle = makeControlButton("\u2304", v -> toggleVirtualKeyboard());
+        keyboardToggle = makeControlButton("v", v -> toggleVirtualKeyboard());
 
         bottomControls.addView(keyboardToggle);
 
@@ -1171,14 +1171,23 @@ public class MainActivity extends Activity
     }
 
     // Recompute the surface bottom margin and the bar position from the current
-    // IME inset and bar visibility. The surface ends above the bar, which sits
-    // directly on top of the IME: "surface / extra-keys bar / IME" bottom-up.
+    // IME inset, the extra-keys bar, and the docked embedded keyboard. The surface
+    // ends above all three, so the desktop shrinks instead of being covered.
     private void relayout() {
         boolean barVisible = extraKeysBar != null && extraKeysBar.getVisibility() == View.VISIBLE;
         int barH = barVisible ? mBarHeight : 0;
         // Floating mode: keyboard + bar overlay the display, so the surface keeps
-        // its full size (target 0). Default mode: shrink the surface above both.
+        // its full size. Default mode: shrink the surface above them.
         int target = mKeyboardFloating ? 0 : (mImeBottom + barH);
+
+        // A docked (non-floating) embedded keyboard raises the desktop above it too.
+        if (anlandKeyboard != null
+                && !anlandKeyboard.isFloating()
+                && anlandKeyboard.getVisibility() == View.VISIBLE) {
+            int kbH = anlandKeyboard.getMeasuredHeight();
+            if (kbH <= 0) kbH = anlandKeyboard.getHeight();
+            if (kbH > 0) target = Math.max(target, kbH);
+        }
 
         FrameLayout.LayoutParams lp =
             (FrameLayout.LayoutParams) surfaceView.getLayoutParams();
@@ -1267,7 +1276,7 @@ public class MainActivity extends Activity
         if (anlandKeyboard.getVisibility() == View.VISIBLE) {
             anlandKeyboard.setVisibility(View.GONE);
             if (keyboardToggle != null)
-                keyboardToggle.setText("\u2304"); // v : keyboard hidden, tap to show
+                keyboardToggle.setText("v"); // v : keyboard hidden, tap to show
             moveBottomControls(0);
             relayout();
         } else {
@@ -1276,7 +1285,7 @@ public class MainActivity extends Activity
             anlandKeyboard.setVisibility(View.VISIBLE);
             anlandKeyboard.bringToFront();
             if (keyboardToggle != null)
-                keyboardToggle.setText("\u2303"); // ^ : keyboard shown, tap to hide
+                keyboardToggle.setText("^"); // ^ : keyboard shown, tap to hide
             // Re-position it (in case screen size changed)
             positionVirtualKeyboard();
             // Lift the control cluster above the keyboard before hiding the IME.

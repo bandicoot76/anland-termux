@@ -46,12 +46,13 @@ public final class AnlandKeyboardHost extends FrameLayout {
     private static final float DOCKED_HEIGHT_FRACTION_PORTRAIT = 0.42f;
     private static final float DOCKED_HEIGHT_FRACTION_LANDSCAPE = 0.55f;
 
-    // The three swipe templates, in cycle order (mirroring the launcher's panes).
+    // The three swipe templates, in cycle order: plain Latin-letter layouts the
+    // user can read (no symbol/numeric pads on swipe).
     private static final List<Integer> TEMPLATES = new ArrayList<>();
     static {
         TEMPLATES.add(R.xml.termux_launcher_qwerty);
-        TEMPLATES.add(R.xml.numeric);
-        TEMPLATES.add(R.xml.greekmath);
+        TEMPLATES.add(R.xml.latn_qwerty_us);
+        TEMPLATES.add(R.xml.latn_dvorak);
     }
 
     private final AnlandKeyboardBridge mBridge;
@@ -129,10 +130,7 @@ public final class AnlandKeyboardHost extends FrameLayout {
                 announceLayout();
             }
             @Override public void showNumeric() {
-                mTemplateIndex = TEMPLATES.indexOf(R.xml.numeric);
-                if (mTemplateIndex < 0) mTemplateIndex = 0;
-                rebuildAndRequestLayout();
-                announceLayout();
+                // No numeric pad in the letter-only swipe ring; ignore.
             }
             @Override public void showText() {
                 mTemplateIndex = TEMPLATES.indexOf(R.xml.termux_launcher_qwerty);
@@ -185,14 +183,9 @@ public final class AnlandKeyboardHost extends FrameLayout {
     private void buildKeyboardView() {
         int resId = TEMPLATES.get(mTemplateIndex);
 
-        // Pads (numeric / greek-math) are self-contained (bottom_row="false"); the text
-        // layout goes through loadTextLayout so its loc-slot extra keys are enabled.
-        KeyboardData data;
-        if (resId == R.xml.numeric || resId == R.xml.greekmath) {
-            data = KeyboardData.load(getResources(), resId);
-        } else {
-            data = loadTextLayout(resId);
-        }
+        // All three swipe templates are text layouts; loadTextLayout enables their
+        // loc-slot extra keys.
+        KeyboardData data = loadTextLayout(resId);
         if (data == null)
             data = KeyboardData.load(getResources(), R.xml.termux_launcher_qwerty);
         if (data == null)
@@ -335,8 +328,8 @@ public final class AnlandKeyboardHost extends FrameLayout {
     private String getLayoutLabel() {
         int resId = TEMPLATES.get(mTemplateIndex);
         if (resId == R.xml.termux_launcher_qwerty) return "QWERTY (Termux Launcher)";
-        if (resId == R.xml.numeric) return "Numeric";
-        if (resId == R.xml.greekmath) return "Greek / Math";
+        if (resId == R.xml.latn_qwerty_us) return "QWERTY (US)";
+        if (resId == R.xml.latn_dvorak) return "Dvorak";
         return "Layout";
     }
 
