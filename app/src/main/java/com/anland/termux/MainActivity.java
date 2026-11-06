@@ -194,17 +194,6 @@ public class MainActivity extends Activity
     // Embedded Unexpected-Keyboard host (floating over the Wayland surface).
     private AnlandKeyboardHost anlandKeyboard;
 
-    // Bottom control bar (below the desktop): show/hide keyboard + settings, a
-    // permanent strip so neither covers the desktop's start menu.
-    private android.widget.LinearLayout bottomControls;
-    private android.widget.TextView keyboardToggle;
-    private android.widget.TextView keyboardSettingsBtn;
-    private int mNavBarHeight;   // control bar height in px
-    private int mNavBarBottom;   // control bar lift above the physical bottom edge (px)
-    // Auto-hide timer for the nav bar; swipe up from the bottom re-reveals it.
-    private final android.os.Handler mNavBarHandler =
-            new android.os.Handler(android.os.Looper.getMainLooper());
-    private Runnable mNavBarHideRunnable;
     private float mTouchDownRawY;
     private float mTouchDownRawX;
 
@@ -387,47 +376,12 @@ public class MainActivity extends Activity
         anlandKeyboard.setVisibility(View.GONE);
         anlandKeyboard.setHostListener(() -> relayout());
 
-        // Permanent control bar BELOW the desktop: show/hide (left) + settings (right).
-        // Full-width and always visible, so it never overlays the desktop's start menu.
-        mNavBarHeight = dpToPx(28);
-        mNavBarBottom = dpToPx(6);
-
         FrameLayout.LayoutParams kbLp = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM
         );
-        // Docked keyboard sits directly on top of the control bar (not over the screen
-        // bottom edge), so its bottom row stays visible and it never covers the bar.
-        kbLp.bottomMargin = mNavBarBottom + mNavBarHeight;
         root.addView(anlandKeyboard, kbLp);
-
-        bottomControls = new android.widget.LinearLayout(this);
-        bottomControls.setOrientation(android.widget.LinearLayout.HORIZONTAL);
-        bottomControls.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        bottomControls.setBackgroundColor(0xCC000000);
-        bottomControls.setPadding(dpToPx(8), 0, dpToPx(8), 0);
-
-        keyboardToggle = makeControlButton("^", v -> toggleVirtualKeyboard());
-        keyboardSettingsBtn = makeControlButton("⚙", v -> { scheduleNavBarHide(); anlandKeyboard.openSettings(); });
-
-        // Spacer pushes the settings button to the right edge.
-        android.widget.TextView spacer = new android.widget.TextView(this);
-        spacer.setText(" ");
-        android.widget.LinearLayout.LayoutParams spacerLp =
-                new android.widget.LinearLayout.LayoutParams(0,
-                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        bottomControls.addView(keyboardToggle);
-        bottomControls.addView(spacer, spacerLp);
-        bottomControls.addView(keyboardSettingsBtn);
-
-        FrameLayout.LayoutParams navLp = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                mNavBarHeight,
-                Gravity.BOTTOM);
-        navLp.bottomMargin = mNavBarBottom;
-        root.addView(bottomControls, navLp);
-        scheduleNavBarHide();
         mHudOverlay = new HudOverlayView(this,
                 getSharedPreferences(PREFS_NAME, MODE_PRIVATE),
                 new HudOverlayView.HudHost() {
@@ -679,9 +633,10 @@ public class MainActivity extends Activity
                 WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
         }
         WindowManager.LayoutParams attrs = getWindow().getAttributes();
-        attrs.layoutInDisplayCutoutMode = DisplayCutoutMode.hidesCutout(mDisplayCutoutMode)
-            ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-            : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER;
+        // Force full-bleed: draw the desktop under the status bar and punch-hole
+        // cutout so it reaches the very top of the screen in portrait.
+        attrs.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
         getWindow().setAttributes(attrs);
     }
 
@@ -743,6 +698,14 @@ public class MainActivity extends Activity
         // rather than mImeBottom, because it has not been updated yet.
         if (!mKeyboardFloating && insets.isVisible(WindowInsets.Type.ime())) {
             safeInsets = Insets.of(safeInsets.left, safeInsets.top, safeInsets.right, 0);
+        }
+
+        // In portrait, draw the desktop full-bleed under the status bar and punch-hole
+        // cutout so it reaches the very top of the screen (ROG Phone 8).
+        boolean portrait = getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_PORTRAIT;
+        if (portrait) {
+            safeInsets = Insets.of(safeInsets.left, 0, safeInsets.right, safeInsets.bottom);
         }
 
         if (mRoot.getPaddingLeft() != safeInsets.left || mRoot.getPaddingTop() != safeInsets.top
@@ -1207,9 +1170,7 @@ public class MainActivity extends Activity
         boolean barVisible = extraKeysBar != null && extraKeysBar.getVisibility() == View.VISIBLE;
         int barH = barVisible ? mBarHeight : 0;
 
-        // The permanent control bar always reserves space below the desktop.
-        int navReserve = mNavBarBottom + mNavBarHeight;
-        int target = navReserve;
+        int target = 0;
 
         // Floating keyboard overlays; a docked+visible keyboard raises the desktop above it.
         if (anlandKeyboard != null
@@ -1217,10 +1178,10 @@ public class MainActivity extends Activity
                 && anlandKeyboard.getVisibility() == View.VISIBLE) {
             int kbH = anlandKeyboard.getHeight();
             if (kbH <= 0) kbH = anlandKeyboard.getMeasuredHeight();
-            target = Math.max(target, navReserve + kbH);
+            target = Math.max(target, kbH);
         }
 
-        // Extra-keys bar (system IME) stacks on top of the control bar too.
+        // Extra-keys bar (system IME) stacks on top.
         target += barH;
 
         FrameLayout.LayoutParams lp =
@@ -1309,23 +1270,12 @@ public class MainActivity extends Activity
         if (anlandKeyboard == null) return;
         if (anlandKeyboard.getVisibility() == View.VISIBLE) {
             anlandKeyboard.setVisibility(View.GONE);
-            if (keyboardToggle != null)
-                keyboardToggle.setText("^"); // ^ : keyboard hidden, tap to show
             relayout();
-            // Keyboard is no longer in use: auto-hide the nav bar shortly after.
-            scheduleNavBarHide();
         } else {
             Log.d("VirtualKeyboard", "toggle: showing keyboard, mRoot="
                     + mRoot.getWidth() + "x" + mRoot.getHeight());
             anlandKeyboard.setVisibility(View.VISIBLE);
             anlandKeyboard.bringToFront();
-            // Keep the permanent control bar on top, or bringToFront() would bury it.
-            if (bottomControls != null) bottomControls.bringToFront();
-            if (keyboardToggle != null)
-                keyboardToggle.setText("v"); // v : keyboard shown, tap to hide
-            // Stay visible while the keyboard is up so the hide key stays reachable.
-            cancelNavBarHide();
-            showNavBar();
             // Re-position it (in case screen size changed)
             positionVirtualKeyboard();
             // Re-run the layout so the desktop lifts above the docked keyboard.
@@ -1336,34 +1286,6 @@ public class MainActivity extends Activity
                 imm.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), 0);
             }
         }
-    }
-
-    // ---- Nav bar auto-hide (5s) + swipe-up reveal ----
-
-    private void showNavBar() {
-        if (bottomControls == null) return;
-        bottomControls.animate().translationY(0f).alpha(1f).setDuration(160).start();
-        // Never auto-hide here: the caller decides (keyboard shown = stay visible).
-    }
-
-    private void hideNavBar() {
-        // Nav bar is intentionally always visible; never auto-hide it.
-    }
-
-    /** Re-arm the 2-second auto-hide timer, but never while the keyboard is shown. */
-    private void scheduleNavBarHide() {
-        if (anlandKeyboard != null && anlandKeyboard.getVisibility() == View.VISIBLE) {
-            cancelNavBarHide();
-            return;
-        }
-        mNavBarHandler.removeCallbacks(mNavBarHideRunnable);
-        mNavBarHideRunnable = this::hideNavBar;
-        mNavBarHandler.postDelayed(mNavBarHideRunnable, 2000);
-    }
-
-    /** Cancel a pending auto-hide (used while the keyboard is shown so the bar stays reachable). */
-    private void cancelNavBarHide() {
-        mNavBarHandler.removeCallbacks(mNavBarHideRunnable);
     }
 
     /** Vertical swipe gesture: swipe up shows the keyboard, swipe down hides it. */
@@ -1392,19 +1314,6 @@ public class MainActivity extends Activity
             default:
                 break;
         }
-    }
-
-    /** Build a compact, monospaced control button for the bottom-left cluster. */
-    private android.widget.TextView makeControlButton(String label, View.OnClickListener onClick) {
-        android.widget.TextView b = new android.widget.TextView(this);
-        b.setText(label);
-        b.setTextColor(android.graphics.Color.WHITE);
-        b.setTextSize(20);
-        b.setGravity(android.view.Gravity.CENTER);
-        b.setPadding(dpToPx(12), dpToPx(7), dpToPx(12), dpToPx(7));
-        b.setBackgroundColor(0x00000000);
-        b.setOnClickListener(onClick);
-        return b;
     }
 
     // Replace the bar with a freshly-parsed one after the user edits the layout in
