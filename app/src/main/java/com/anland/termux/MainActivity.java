@@ -194,8 +194,8 @@ public class MainActivity extends Activity
     // Embedded Unexpected-Keyboard host (floating over the Wayland surface).
     private AnlandKeyboardHost anlandKeyboard;
 
-    // Floating control bar: keyboard toggle + copy/paste.
-    private AnlandNavBar navBar;
+    // Single show/hide keyboard toggle (^ when shown, v when hidden), bottom-left.
+    private android.widget.TextView keyboardToggle;
 
     // ==================== 触摸板相关设置 ====================
     public static final String KEY_TOUCHPAD_MODE = "touchpad_mode";
@@ -380,16 +380,19 @@ public class MainActivity extends Activity
             Gravity.BOTTOM
         ));
 
-        // Floating control bar (keyboard toggle + copy/paste), top-right by default.
-        navBar = new AnlandNavBar(this, new AnlandNavBar.NavListener() {
-            @Override public void toggleKeyboard() { MainActivity.this.toggleVirtualKeyboard(); }
-            @Override public void copy() { sendCtrlChord(KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_C)); }
-            @Override public void paste() { sendCtrlChord(KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_V)); }
-        });
-        root.addView(navBar, new FrameLayout.LayoutParams(
+        // Single show/hide keyboard toggle, bottom-left; icon ^ (show) / v (hide).
+        keyboardToggle = new android.widget.TextView(this);
+        keyboardToggle.setText("\u2303"); // ^ (up caret: keyboard hidden, tap to show)
+        keyboardToggle.setTextColor(android.graphics.Color.WHITE);
+        keyboardToggle.setTextSize(22);
+        keyboardToggle.setGravity(android.view.Gravity.CENTER);
+        keyboardToggle.setBackgroundColor(0xAA000000);
+        keyboardToggle.setPadding(dpToPx(14), dpToPx(8), dpToPx(14), dpToPx(8));
+        keyboardToggle.setOnClickListener(v -> MainActivity.this.toggleVirtualKeyboard());
+        root.addView(keyboardToggle, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP | Gravity.END
+            Gravity.BOTTOM | Gravity.START
         ));
         mHudOverlay = new HudOverlayView(this,
                 getSharedPreferences(PREFS_NAME, MODE_PRIVATE),
@@ -1259,11 +1262,15 @@ public class MainActivity extends Activity
         if (anlandKeyboard == null) return;
         if (anlandKeyboard.getVisibility() == View.VISIBLE) {
             anlandKeyboard.setVisibility(View.GONE);
+            if (keyboardToggle != null)
+                keyboardToggle.setText("\u2303"); // ^ : keyboard hidden, tap to show
         } else {
             Log.d("VirtualKeyboard", "toggle: showing keyboard, mRoot="
                     + mRoot.getWidth() + "x" + mRoot.getHeight());
             anlandKeyboard.setVisibility(View.VISIBLE);
             anlandKeyboard.bringToFront();
+            if (keyboardToggle != null)
+                keyboardToggle.setText("\u2304"); // v : keyboard shown, tap to hide
             // Re-position it (in case screen size changed)
             positionVirtualKeyboard();
             // Hide the system IME to avoid overlap with the floating keyboard.
@@ -1272,15 +1279,6 @@ public class MainActivity extends Activity
                 imm.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), 0);
             }
         }
-    }
-
-    /** Send Ctrl + key as a down/up chord of evdev scancodes (copy/paste on the surface). */
-    private void sendCtrlChord(int evdev) {
-        if (evdev < 0) return;
-        Native.nativeSendKey(0, 29); // Ctrl down
-        Native.nativeSendKey(0, evdev);
-        Native.nativeSendKey(1, evdev);
-        Native.nativeSendKey(1, 29); // Ctrl up
     }
 
     // Replace the bar with a freshly-parsed one after the user edits the layout in
