@@ -61,7 +61,10 @@ public final class AnlandKeyboardHost extends FrameLayout {
     private final View mDragHandle;
     private final View mResizeGrip;
 
-    private final List<Integer> mLayoutRing;
+    // Full catalogue of selectable text layouts (resource id + display label). Referencing
+    // every R.xml.* here also keeps the resource shrinker (R8) from stripping them from the APK.
+    private final List<LayoutEntry> mLayoutCatalog = new ArrayList<>();
+    private final List<Integer> mLayoutRing = new ArrayList<>();
     private int mRingIndex;
     private boolean mModalNumeric;
 
@@ -75,6 +78,21 @@ public final class AnlandKeyboardHost extends FrameLayout {
     private boolean mHapticsEnabled;
     private String mThemeMode = "dark";
 
+    /** Immutable catalogue entry: a layout resource id and its user-facing label. */
+    private static final class LayoutEntry {
+        final int resId;
+        final String label;
+
+        LayoutEntry(int resId, String label) {
+            this.resId = resId;
+            this.label = label;
+        }
+    }
+
+    private void addLayout(int resId, String label) {
+        mLayoutCatalog.add(new LayoutEntry(resId, label));
+    }
+
     public AnlandKeyboardHost(Context context) {
         super(context);
         setClipChildren(false);
@@ -84,7 +102,34 @@ public final class AnlandKeyboardHost extends FrameLayout {
         mBridge = new AnlandKeyboardBridge();
         mOrientation = context.getResources().getConfiguration().orientation;
 
-        mLayoutRing = new ArrayList<>();
+        mLayoutCatalog.clear();
+        addLayout(R.xml.termux_launcher_qwerty, "QWERTY (Termux Launcher)");
+        addLayout(R.xml.latn_qwerty_us, "QWERTY (US)");
+        addLayout(R.xml.latn_colemak, "Colemak");
+        addLayout(R.xml.latn_dvorak, "Dvorak");
+        addLayout(R.xml.latn_azerty_fr, "AZERTY (Français)");
+        addLayout(R.xml.latn_azerty_be, "AZERTY (Belgian)");
+        addLayout(R.xml.latn_qwertz_de, "QWERTZ (Deutsch)");
+        addLayout(R.xml.latn_bepo_fr, "BEPO (Français)");
+        addLayout(R.xml.latn_neo2, "Neo 2");
+        addLayout(R.xml.latn_workman_us, "Workman (US)");
+        addLayout(R.xml.latn_qwerty_gb, "QWERTY (UK)");
+        addLayout(R.xml.latn_qwerty_es, "QWERTY (Español)");
+        addLayout(R.xml.latn_qwerty_fi, "QWERTY (Finnish)");
+        addLayout(R.xml.latn_qwerty_tr, "QWERTY (Türkçe)");
+        addLayout(R.xml.latn_qwerty_pl, "QWERTY (Polski)");
+        addLayout(R.xml.latn_qwerty_hu, "QWERTY (Magyar)");
+        addLayout(R.xml.latn_qwerty_cz, "QWERTY (Czech)");
+        addLayout(R.xml.latn_qwerty_jp, "QWERTY (Japan)");
+        addLayout(R.xml.cyrl_jcuken_ru, "ЙЦУКЕН (Русский)");
+        addLayout(R.xml.cyrl_jcuken_uk, "ЙЦУКЕН (Українська)");
+        addLayout(R.xml.arab_pc, "Arabic PC");
+        addLayout(R.xml.grek_qwerty, "QWERTY (Greek)");
+        addLayout(R.xml.hebr_1_il, "Hebrew");
+        addLayout(R.xml.hang_dubeolsik_kr, "두벌식 (Korean)");
+
+        // Default ring: the launcher layout, then the three most common alternatives.
+        mLayoutRing.clear();
         Collections.addAll(mLayoutRing,
             R.xml.termux_launcher_qwerty,
             R.xml.latn_qwerty_us,
@@ -267,7 +312,7 @@ public final class AnlandKeyboardHost extends FrameLayout {
 
         panel.addView(makeMenuRow("Layout", getLayoutLabel(), () -> {
             popup.dismiss();
-            switchLayout();
+            showLayoutPicker();
         }));
         panel.addView(makeMenuRow("Theme", mThemeMode, () -> {
             popup.dismiss();
@@ -323,15 +368,65 @@ public final class AnlandKeyboardHost extends FrameLayout {
         return row;
     }
 
+    /** A scrollable list of every selectable layout, so settings can switch layouts anywhere. */
+    private void showLayoutPicker() {
+        final PopupWindow popup = new PopupWindow(this);
+        LinearLayout panel = new LinearLayout(getContext());
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackgroundColor(0xF01B1B1B);
+
+        TextView title = new TextView(getContext());
+        title.setText("Choose layout");
+        title.setTextColor(0xFFFFFFFF);
+        title.setTextSize(16);
+        title.setPadding(dp(16), dp(14), dp(16), dp(6));
+        panel.addView(title);
+
+        for (LayoutEntry entry : mLayoutCatalog) {
+            final int resId = entry.resId;
+            boolean selected = !mModalNumeric && mLayoutRing.get(mRingIndex) == resId;
+            String mark = selected ? " \u2713" : "";
+            panel.addView(makeMenuRow(entry.label, mark, () -> {
+                popup.dismiss();
+                selectLayout(resId);
+            }));
+        }
+
+        // Wrap in a scroll container so all layouts fit on any screen.
+        android.widget.ScrollView scroll = new android.widget.ScrollView(getContext());
+        scroll.addView(panel);
+
+        popup.setContentView(scroll);
+        popup.setWidth(dp(320));
+        popup.setHeight(dp(480));
+        popup.setFocusable(true);
+        popup.setOutsideTouchable(true);
+        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0));
+        popup.showAtLocation(this, Gravity.CENTER, 0, 0);
+    }
+
     private String getLayoutLabel() {
         if (mModalNumeric)
             return "Numeric";
         int resId = mLayoutRing.get(mRingIndex);
-        if (resId == R.xml.termux_launcher_qwerty) return "Termux QWERTY";
-        if (resId == R.xml.latn_qwerty_us) return "QWERTY (US)";
-        if (resId == R.xml.latn_colemak) return "Colemak";
-        if (resId == R.xml.latn_dvorak) return "Dvorak";
+        return labelFor(resId);
+    }
+
+    private String labelFor(int resId) {
+        for (LayoutEntry e : mLayoutCatalog)
+            if (e.resId == resId)
+                return e.label;
         return "Custom";
+    }
+
+    /** Select a specific text layout (used by the settings layout picker). */
+    private void selectLayout(int resId) {
+        mModalNumeric = false;
+        int idx = mLayoutRing.indexOf(resId);
+        if (idx < 0)
+            idx = 0;
+        mRingIndex = idx;
+        rebuildAndRequestLayout();
     }
 
     private void persistSetting(String key, boolean value) {
