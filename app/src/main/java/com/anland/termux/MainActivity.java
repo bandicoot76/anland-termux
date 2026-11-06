@@ -201,6 +201,12 @@ public class MainActivity extends Activity
     private android.widget.TextView keyboardSettingsBtn;
     private int mNavBarHeight;   // control bar height in px
     private int mNavBarBottom;   // control bar lift above the physical bottom edge (px)
+    // Auto-hide timer for the nav bar; swipe up from the bottom re-reveals it.
+    private final android.os.Handler mNavBarHandler =
+            new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable mNavBarHideRunnable;
+    private float mTouchDownRawY;
+    private boolean mTouchDownNavHidden;
 
     // ==================== 触摸板相关设置 ====================
     public static final String KEY_TOUCHPAD_MODE = "touchpad_mode";
@@ -383,7 +389,7 @@ public class MainActivity extends Activity
 
         // Permanent control bar BELOW the desktop: show/hide (left) + settings (right).
         // Full-width and always visible, so it never overlays the desktop's start menu.
-        mNavBarHeight = dpToPx(48);
+        mNavBarHeight = dpToPx(28);
         mNavBarBottom = dpToPx(6);
 
         FrameLayout.LayoutParams kbLp = new FrameLayout.LayoutParams(
@@ -402,8 +408,8 @@ public class MainActivity extends Activity
         bottomControls.setBackgroundColor(0xCC000000);
         bottomControls.setPadding(dpToPx(8), 0, dpToPx(8), 0);
 
-        keyboardToggle = makeControlButton("v", v -> toggleVirtualKeyboard());
-        keyboardSettingsBtn = makeControlButton("⚙", v -> anlandKeyboard.openSettings());
+        keyboardToggle = makeControlButton("^", v -> toggleVirtualKeyboard());
+        keyboardSettingsBtn = makeControlButton("⚙", v -> { scheduleNavBarHide(); anlandKeyboard.openSettings(); });
 
         // Spacer pushes the settings button to the right edge.
         android.widget.TextView spacer = new android.widget.TextView(this);
@@ -421,6 +427,7 @@ public class MainActivity extends Activity
                 Gravity.BOTTOM);
         navLp.bottomMargin = mNavBarBottom;
         root.addView(bottomControls, navLp);
+        scheduleNavBarHide();
         mHudOverlay = new HudOverlayView(this,
                 getSharedPreferences(PREFS_NAME, MODE_PRIVATE),
                 new HudOverlayView.HudHost() {
@@ -1303,8 +1310,10 @@ public class MainActivity extends Activity
         if (anlandKeyboard.getVisibility() == View.VISIBLE) {
             anlandKeyboard.setVisibility(View.GONE);
             if (keyboardToggle != null)
-                keyboardToggle.setText("v"); // v : keyboard hidden, tap to show
+                keyboardToggle.setText("^"); // ^ : keyboard hidden, tap to show
             relayout();
+            // Keyboard is no longer in use: auto-hide the nav bar shortly after.
+            scheduleNavBarHide();
         } else {
             Log.d("VirtualKeyboard", "toggle: showing keyboard, mRoot="
                     + mRoot.getWidth() + "x" + mRoot.getHeight());
@@ -1313,7 +1322,10 @@ public class MainActivity extends Activity
             // Keep the permanent control bar on top, or bringToFront() would bury it.
             if (bottomControls != null) bottomControls.bringToFront();
             if (keyboardToggle != null)
-                keyboardToggle.setText("^"); // ^ : keyboard shown, tap to hide
+                keyboardToggle.setText("v"); // v : keyboard shown, tap to hide
+            // Stay visible while the keyboard is up so the hide key stays reachable.
+            cancelNavBarHide();
+            showNavBar();
             // Re-position it (in case screen size changed)
             positionVirtualKeyboard();
             // Re-run the layout so the desktop lifts above the docked keyboard.
@@ -1323,6 +1335,57 @@ public class MainActivity extends Activity
             if (imm != null && getCurrentFocus() != null) {
                 imm.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), 0);
             }
+        }
+    }
+
+    // ---- Nav bar auto-hide (5s) + swipe-up reveal ----
+
+    private boolean isNavBarHidden() {
+        return bottomControls != null && bottomControls.getTranslationY() > 0f;
+    }
+
+    private void showNavBar() {
+        if (bottomControls == null) return;
+        bottomControls.animate().translationY(0f).alpha(1f).setDuration(160).start();
+        scheduleNavBarHide();
+    }
+
+    private void hideNavBar() {
+        if (bottomControls == null) return;
+        bottomControls.animate()
+                .translationY(mNavBarHeight + mNavBarBottom).alpha(0f)
+                .setDuration(160).start();
+    }
+
+    /** Re-arm the 2-second auto-hide timer from the last interaction. */
+    private void scheduleNavBarHide() {
+        mNavBarHandler.removeCallbacks(mNavBarHideRunnable);
+        mNavBarHideRunnable = this::hideNavBar;
+        mNavBarHandler.postDelayed(mNavBarHideRunnable, 2000);
+    }
+
+    /** Cancel a pending auto-hide (used while the keyboard is shown so the bar stays reachable). */
+    private void cancelNavBarHide() {
+        mNavBarHandler.removeCallbacks(mNavBarHideRunnable);
+    }
+
+    /** Reveal the nav bar on an upward swipe from the bottom; re-arm on any touch. */
+    private void handleNavBarGesture(MotionEvent event) {
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                mTouchDownRawY = event.getRawY();
+                mTouchDownNavHidden = isNavBarHidden();
+                if (!mTouchDownNavHidden)
+                    scheduleNavBarHide();
+                break;
+            case MotionEvent.ACTION_MOVE:
+                if (mTouchDownNavHidden && (mTouchDownRawY - event.getRawY()) > dpToPx(48)) {
+                    showNavBar();
+                    mTouchDownNavHidden = false;
+                }
+                break;
+            default:
+                break;
         }
     }
 
@@ -1397,6 +1460,7 @@ public class MainActivity extends Activity
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         if (isHudEditing()) return true;
+        handleNavBarGesture(event);
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN && !surfaceView.isFocused())
             surfaceView.requestFocus();
         if (event.getActionMasked() == MotionEvent.ACTION_UP && mPointerCaptureEnabled)
