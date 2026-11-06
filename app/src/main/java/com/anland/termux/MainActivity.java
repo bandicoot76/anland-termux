@@ -375,6 +375,7 @@ public class MainActivity extends Activity
         // liftable to floating via its top handle. Key events bridge to evdev scancodes.
         anlandKeyboard = new AnlandKeyboardHost(this);
         anlandKeyboard.setVisibility(View.GONE);
+        anlandKeyboard.setHostListener(() -> relayout());
         root.addView(anlandKeyboard, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -1175,9 +1176,21 @@ public class MainActivity extends Activity
     private void relayout() {
         boolean barVisible = extraKeysBar != null && extraKeysBar.getVisibility() == View.VISIBLE;
         int barH = barVisible ? mBarHeight : 0;
-        // Floating mode: keyboard + bar overlay the display, so the surface keeps
-        // its full size (target 0). Default mode: shrink the surface above both.
-        int target = mKeyboardFloating ? 0 : (mImeBottom + barH);
+
+        // Embedded keyboard height, when it is docked (not floating) and visible: the
+        // surface must shrink above it so the desktop is never covered.
+        int dockedKbH = 0;
+        if (anlandKeyboard != null
+                && !anlandKeyboard.isFloating()
+                && anlandKeyboard.getVisibility() == View.VISIBLE) {
+            dockedKbH = anlandKeyboard.getHeight();
+        }
+
+        // Floating keyboard overlays the display (target 0); a docked keyboard + bar
+        // shrink the surface above them.
+        int target = (mKeyboardFloating && dockedKbH == 0)
+                ? 0
+                : Math.max(mImeBottom + barH, dockedKbH);
 
         FrameLayout.LayoutParams lp =
             (FrameLayout.LayoutParams) surfaceView.getLayoutParams();
@@ -1268,6 +1281,7 @@ public class MainActivity extends Activity
             if (keyboardToggle != null)
                 keyboardToggle.setText("\u2304"); // v : keyboard hidden, tap to show
             moveBottomControls(0);
+            relayout();
         } else {
             Log.d("VirtualKeyboard", "toggle: showing keyboard, mRoot="
                     + mRoot.getWidth() + "x" + mRoot.getHeight());
@@ -1281,6 +1295,7 @@ public class MainActivity extends Activity
             anlandKeyboard.post(() -> {
                 int kh = anlandKeyboard.getHeight();
                 moveBottomControls(kh);
+                relayout();
             });
             // Hide the system IME to avoid overlap with the floating keyboard.
             InputMethodManager imm = getSystemService(InputMethodManager.class);

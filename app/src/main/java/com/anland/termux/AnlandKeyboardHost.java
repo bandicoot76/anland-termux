@@ -74,6 +74,17 @@ public final class AnlandKeyboardHost extends FrameLayout {
     /** User-set floating width in dp; 0 means "auto" (bounded by parent). */
     private int mFloatingWidthDp;
 
+    /** Notified when the keyboard docks/un-docks so the host can resize the surface. */
+    public interface HostListener {
+        void onDockChanged();
+    }
+
+    private HostListener mHostListener;
+
+    public void setHostListener(HostListener listener) {
+        mHostListener = listener;
+    }
+
     // Settings currently reachable from the keyboard's config key, persisted per-device.
     private boolean mNumberRowEnabled;
     private boolean mHapticsEnabled;
@@ -108,25 +119,92 @@ public final class AnlandKeyboardHost extends FrameLayout {
         addLayout(R.xml.latn_qwerty_us, "QWERTY (US)");
         addLayout(R.xml.latn_colemak, "Colemak");
         addLayout(R.xml.latn_dvorak, "Dvorak");
-        addLayout(R.xml.latn_azerty_fr, "AZERTY (Français)");
+        addLayout(R.xml.arab_alt, "Arabic Alt");
+        addLayout(R.xml.arab_pc, "Arabic PC");
+        addLayout(R.xml.arab_pc_hindu, "Arabic PC (Hindu numerals)");
         addLayout(R.xml.latn_azerty_be, "AZERTY (Belgian)");
-        addLayout(R.xml.latn_qwertz_de, "QWERTZ (Deutsch)");
+        addLayout(R.xml.latn_azerty_fr, "AZERTY (Français)");
         addLayout(R.xml.latn_bepo_fr, "BEPO (Français)");
+        addLayout(R.xml.latn_bone, "Bone");
+        addLayout(R.xml.arab_pc_ckb_fa, "Central Kurdish (سۆرانی) Persian Layout");
+        addLayout(R.xml.hebr_1_il, "Hebrew 1");
+        addLayout(R.xml.hebr_2_il, "Hebrew 2");
+        addLayout(R.xml.arab_pc_ckb, "Kurdish (کوردی) QWERTY");
         addLayout(R.xml.latn_neo2, "Neo 2");
-        addLayout(R.xml.latn_workman_us, "Workman (US)");
-        addLayout(R.xml.latn_qwerty_gb, "QWERTY (UK)");
+        addLayout(R.xml.cyrl_yxukeng_os, "Old Church Slavonic (Црькъвьнословѣньскъ ѩзыкъ)");
+        addLayout(R.xml.arab_pc_ir, "Persian PC");
+        addLayout(R.xml.latn_qwerty_apl, "QWERTY (APL)");
+        addLayout(R.xml.latn_qwerty_az, "QWERTY (Azərbaycanca)");
+        addLayout(R.xml.latn_qwerty_bqn, "QWERTY (BQN)");
+        addLayout(R.xml.latn_qwerty_br, "QWERTY (Brasileiro)");
+        addLayout(R.xml.latn_qwerty_cz, "QWERTY (Czech)");
+        addLayout(R.xml.latn_qwerty_da, "QWERTY (Danish)");
+        addLayout(R.xml.latn_qwerty_et, "QWERTY (eesti)");
         addLayout(R.xml.latn_qwerty_es, "QWERTY (Español)");
         addLayout(R.xml.latn_qwerty_fi, "QWERTY (Finnish)");
-        addLayout(R.xml.latn_qwerty_tr, "QWERTY (Türkçe)");
-        addLayout(R.xml.latn_qwerty_pl, "QWERTY (Polski)");
-        addLayout(R.xml.latn_qwerty_hu, "QWERTY (Magyar)");
-        addLayout(R.xml.latn_qwerty_cz, "QWERTY (Czech)");
+        addLayout(R.xml.grek_qwerty, "QWERTY (Greek)");
+        addLayout(R.xml.latn_qwerty_haw, "QWERTY (Hawaiian)");
+        addLayout(R.xml.latn_qwerty_ga, "QWERTY (Irish)");
         addLayout(R.xml.latn_qwerty_jp, "QWERTY (Japan)");
+        addLayout(R.xml.latn_qwerty_lv, "QWERTY (Latvian)");
+        addLayout(R.xml.latn_qwerty_lt, "QWERTY (Lietuviškai)");
+        addLayout(R.xml.latn_qwerty_hu, "QWERTY (Magyar)");
+        addLayout(R.xml.latn_qwerty_mt, "QWERTY (Malti)");
+        addLayout(R.xml.latn_qwerty_no, "QWERTY (Norwegian)");
+        addLayout(R.xml.latn_qwerty_uz, "QWERTY (Oʻzbekcha)");
+        addLayout(R.xml.latn_qwerty_pl, "QWERTY (Polski)");
+        addLayout(R.xml.latn_qwerty_kk, "QWERTY (Qazaqşa)");
+        addLayout(R.xml.latn_qwerty_ro, "QWERTY (Română)");
+        addLayout(R.xml.latn_qwerty_sk, "QWERTY (Slovak)");
+        addLayout(R.xml.latn_qwerty_sr, "QWERTY (Srpski, latinica)");
+        addLayout(R.xml.latn_qwerty_se, "QWERTY (Swedish)");
+        addLayout(R.xml.latn_qwerty_tly, "QWERTY (Talysh New Latin)");
+        addLayout(R.xml.latn_qwerty_tr, "QWERTY (Türkçe)");
+        addLayout(R.xml.latn_qwerty_gb, "QWERTY (UK)");
+        addLayout(R.xml.latn_qwerty_vi, "QWERTY (Vietnamese)");
+        addLayout(R.xml.latn_qwerty_cy, "QWERTY (Welsh)");
+        addLayout(R.xml.latn_qwerty_is, "QWERTY (Íslenska)");
+        addLayout(R.xml.latn_qwertz, "QWERTZ");
+        addLayout(R.xml.latn_qwertz_sq, "QWERTZ (Albanian)");
+        addLayout(R.xml.latn_qwertz_cz_diacritics, "QWERTZ (Czech with diacritic keys)");
+        addLayout(R.xml.latn_qwertz_cz, "QWERTZ (Czech)");
+        addLayout(R.xml.latn_qwertz_de, "QWERTZ (Deutsch)");
+        addLayout(R.xml.latn_qwertz_hu, "QWERTZ (Magyar)");
+        addLayout(R.xml.latn_qwertz_sk, "QWERTZ (Slovak)");
+        addLayout(R.xml.latn_qwertz_fr_ch, "QWERTZ (Swiss French)");
+        addLayout(R.xml.latn_qwertz_cz_multifunctional, "QWERTZ Multifunctional (Czech)");
+        addLayout(R.xml.latn_qzerty_it, "QZERTY (Italiano)");
+        addLayout(R.xml.shaw_imperial_en, "Shaw Imperial");
+        addLayout(R.xml.cyrl_yqukeng_tj, "Tajiki Persian (Тоҷикӣ)");
+        addLayout(R.xml.arab_hamvaj_tly, "Talysh (تالشی همواج)");
+        addLayout(R.xml.latin_kbdtuf_tr, "Turkish F");
+        addLayout(R.xml.urdu_phonetic_ur, "Urdu Phonetic");
+        addLayout(R.xml.latn_workman_us, "WORKMAN (US)");
         addLayout(R.xml.cyrl_jcuken_ru, "ЙЦУКЕН (Русский)");
         addLayout(R.xml.cyrl_jcuken_uk, "ЙЦУКЕН (Українська)");
-        addLayout(R.xml.arab_pc, "Arabic PC");
-        addLayout(R.xml.grek_qwerty, "QWERTY (Greek)");
-        addLayout(R.xml.hebr_1_il, "Hebrew");
+        addLayout(R.xml.cyrl_jcuken_kk, "ЙЦУКЕН (Қазақша)");
+        addLayout(R.xml.cyrl_jiuken, "ЙІУКЕН");
+        addLayout(R.xml.cyrl_ueishsht, "УЕИШЩ (Български, БДС)");
+        addLayout(R.xml.cyrl_fcuzhen_mn, "ФЦУЖЭН (Монгол)");
+        addLayout(R.xml.cyrl_yaverti, "ЯВЕРТЪ");
+        addLayout(R.xml.cyrl_yawerty, "ЯВЕРТЫ");
+        addLayout(R.xml.cyrl_jcuken_as, "ЈЦУКЕН (Всисловѣнск)");
+        addLayout(R.xml.cyrl_lynyertz_sr, "ЉЊЕРТЗ (Српски)");
+        addLayout(R.xml.cyrl_lynyertdz_mk, "ЉЊЕРТЅ (Македонски)");
+        addLayout(R.xml.armn_cpbsmo, "ՃՓԲՍՄՈ");
+        addLayout(R.xml.armn_kvertc, "ՔՎԸՐՏՃ");
+        addLayout(R.xml.deva_inscript, "देवनागरी (हिंदी)-1");
+        addLayout(R.xml.deva_alt, "देवनागरी (हिंदी)-2");
+        addLayout(R.xml.deva_phonetic_in, "हिन्दी फोनेटिक - Hindi Phonetic");
+        addLayout(R.xml.beng_assamese, "অসমীয়া (Assamese)");
+        addLayout(R.xml.beng_national, "বাংলা (জাতীয়)");
+        addLayout(R.xml.beng_provat, "বাংলা (প্রভাত)");
+        addLayout(R.xml.guj_phonetic_in, "ગુજરાતી ફોનેટિક - Gujarati Phonetic");
+        addLayout(R.xml.tamil_default, "தமிழ்");
+        addLayout(R.xml.kann_kannada, "ಕನ್ನಡ - Kannada");
+        addLayout(R.xml.sinhala_phonetic, "සිංහල");
+        addLayout(R.xml.georgian_mes, "ქართული (MES)");
+        addLayout(R.xml.georgian_qwerty, "ქართული (QWERTY)");
         addLayout(R.xml.hang_dubeolsik_kr, "두벌식 (Korean)");
 
         // Default ring: the launcher layout, then the three most common alternatives.
@@ -606,6 +684,8 @@ public final class AnlandKeyboardHost extends FrameLayout {
         }
         setLayoutParams(lp);
         mResizeGrip.setVisibility(floating ? View.VISIBLE : View.GONE);
+        if (mHostListener != null)
+            mHostListener.onDockChanged();
     }
 
     private void clampFloatingPosition() {
