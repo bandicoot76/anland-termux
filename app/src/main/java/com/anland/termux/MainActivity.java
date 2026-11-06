@@ -197,6 +197,8 @@ public class MainActivity extends Activity
     // Bottom-left control cluster, always visible: show/hide keyboard only.
     private android.widget.LinearLayout bottomControls;
     private android.widget.TextView keyboardToggle;
+    // Bottom-right keyboard settings button (same style as the show/hide toggle).
+    private android.widget.TextView keyboardSettingsBtn;
 
     // ==================== 触摸板相关设置 ====================
     public static final String KEY_TOUCHPAD_MODE = "touchpad_mode";
@@ -376,11 +378,15 @@ public class MainActivity extends Activity
         anlandKeyboard = new AnlandKeyboardHost(this);
         anlandKeyboard.setVisibility(View.GONE);
         anlandKeyboard.setHostListener(() -> relayout());
-        root.addView(anlandKeyboard, new FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams kbLp = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM
-        ));
+        );
+        // Lift the docked keyboard above the gesture/navigation zone so its bottom
+        // row is not cut off (ROG Phone 8). Floating mode positions itself via X/Y.
+        kbLp.bottomMargin = dpToPx(18);
+        root.addView(anlandKeyboard, kbLp);
 
         // Bottom-left show/hide keyboard toggle, always visible; rides above the keyboard.
         bottomControls = new android.widget.LinearLayout(this);
@@ -397,6 +403,14 @@ public class MainActivity extends Activity
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM | Gravity.START
+        ));
+
+        // Bottom-right settings button, same look as the show/hide toggle.
+        keyboardSettingsBtn = makeControlButton("⚙", v -> anlandKeyboard.openSettings());
+        root.addView(keyboardSettingsBtn, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM | Gravity.END
         ));
         mHudOverlay = new HudOverlayView(this,
                 getSharedPreferences(PREFS_NAME, MODE_PRIVATE),

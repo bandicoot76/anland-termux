@@ -12,22 +12,24 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import juloo.keyboard2.Config;
+import juloo.keyboard2.KeyValue;
 import juloo.keyboard2.Keyboard2View;
 import juloo.keyboard2.KeyboardData;
-import juloo.keyboard2.KeyValue;
 import juloo.keyboard2.LayoutModifier;
 import juloo.keyboard2.Theme;
 
 /**
  * The embedded {@link Keyboard2View} (Unexpected Keyboard) hosted over Anland's Wayland surface.
  *
- * <p>Swiping the space bar (or Ctrl key) cycles exactly the launcher's three templates:
- * the terminal QWERTY layout, the numeric pad, and the Greek/math pad. The keyboard docks
- * full-width at the bottom (shrinking the surface above it so the desktop is never covered)
- * by default, and can be lifted into a floating, resizable position via its top handle.</p>
+ * <p>Swiping the space bar cycles three plain Latin-letter templates (Termux QWERTY →
+ * QWERTY US → Dvorak). The keyboard docks full-width at the bottom (the desktop is raised
+ * above it so nothing is covered) and can be lifted into a floating, resizable position via
+ * its top handle.</p>
  *
  * <p>Key events are translated to evdev scancodes by {@link AnlandKeyboardBridge}.</p>
  */
@@ -40,14 +42,11 @@ public final class AnlandKeyboardHost extends FrameLayout {
     private static final float LIFT_THRESHOLD_DP = 12f;
     private static final int MIN_FLOATING_WIDTH_DP = 240;
     private static final int MAX_FLOATING_WIDTH_DP = 640;
-    // Keyboard height as a fraction of the screen height, per orientation. Portrait keeps
-    // roughly the launcher's 42% share; landscape (a short and wide screen) gets more so the
-    // rows stay tall enough to hit, tuned for a 1080x2400 class device like the ROG Phone 8.
+    // Keyboard height as a fraction of the screen height, per orientation.
     private static final float DOCKED_HEIGHT_FRACTION_PORTRAIT = 0.42f;
     private static final float DOCKED_HEIGHT_FRACTION_LANDSCAPE = 0.55f;
 
-    // The three swipe templates, in cycle order: plain Latin-letter layouts the
-    // user can read (no symbol/numeric pads on swipe).
+    // The three swipe templates, in cycle order: plain Latin-letter layouts.
     private static final List<Integer> TEMPLATES = new ArrayList<>();
     static {
         TEMPLATES.add(R.xml.termux_launcher_qwerty);
@@ -157,13 +156,18 @@ public final class AnlandKeyboardHost extends FrameLayout {
         return mFloating;
     }
 
-    /** Cycle to the next template (text → numeric → greek/math → text). */
+    /** Cycle to the next template (Termux QWERTY → US → Dvorak → Termux QWERTY). */
     public void switchLayout() {
         int n = TEMPLATES.size();
         if (n == 0) return;
         mTemplateIndex = (mTemplateIndex + 1) % n;
         rebuildAndRequestLayout();
         announceLayout();
+    }
+
+    /** Open the keyboard settings popup, for the bottom-right settings control. */
+    public void openSettings() {
+        showSettingsMenu();
     }
 
     /** Show a short toast naming the just-selected template, matching termux-launcher's notice. */
@@ -224,7 +228,7 @@ public final class AnlandKeyboardHost extends FrameLayout {
         KeyboardData data = KeyboardData.load(getResources(), resId);
         if (data == null)
             return null;
-        java.util.Map<KeyValue, KeyboardData.PreferredPos> extraKeys = new java.util.HashMap<>();
+        Map<KeyValue, KeyboardData.PreferredPos> extraKeys = new HashMap<>();
         String[] names = {"esc", "tab", "capslock", "alt", "meta", "compose"};
         for (String name : names) {
             KeyValue kv = KeyValue.getKeyByName(name);
@@ -252,9 +256,7 @@ public final class AnlandKeyboardHost extends FrameLayout {
                 0xFFAAAAAA, true, 0.6f, 5.0f, 1.0f);
     }
 
-    /**
-     * Keyboard settings menu: template cycle, theme, number row, and haptics.
-     */
+    /** Keyboard settings menu: template cycle, theme, number row, and haptics. */
     private void showSettingsMenu() {
         final PopupWindow popup = new PopupWindow(this);
         LinearLayout panel = new LinearLayout(getContext());
