@@ -206,7 +206,7 @@ public class MainActivity extends Activity
             new android.os.Handler(android.os.Looper.getMainLooper());
     private Runnable mNavBarHideRunnable;
     private float mTouchDownRawY;
-    private boolean mTouchDownNavHidden;
+    private float mTouchDownRawX;
 
     // ==================== 触摸板相关设置 ====================
     public static final String KEY_TOUCHPAD_MODE = "touchpad_mode";
@@ -1340,10 +1340,6 @@ public class MainActivity extends Activity
 
     // ---- Nav bar auto-hide (5s) + swipe-up reveal ----
 
-    private boolean isNavBarHidden() {
-        return bottomControls != null && bottomControls.getTranslationY() > 0f;
-    }
-
     private void showNavBar() {
         if (bottomControls == null) return;
         bottomControls.animate().translationY(0f).alpha(1f).setDuration(160).start();
@@ -1351,10 +1347,7 @@ public class MainActivity extends Activity
     }
 
     private void hideNavBar() {
-        if (bottomControls == null) return;
-        bottomControls.animate()
-                .translationY(mNavBarHeight + mNavBarBottom).alpha(0f)
-                .setDuration(160).start();
+        // Nav bar is intentionally always visible; never auto-hide it.
     }
 
     /** Re-arm the 2-second auto-hide timer, but never while the keyboard is shown. */
@@ -1373,21 +1366,29 @@ public class MainActivity extends Activity
         mNavBarHandler.removeCallbacks(mNavBarHideRunnable);
     }
 
-    /** Reveal the nav bar on an upward swipe from the bottom; re-arm on any touch. */
+    /** Vertical swipe gesture: swipe up shows the keyboard, swipe down hides it. */
     private void handleNavBarGesture(MotionEvent event) {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 mTouchDownRawY = event.getRawY();
-                mTouchDownNavHidden = isNavBarHidden();
-                if (!mTouchDownNavHidden)
-                    scheduleNavBarHide();
+                mTouchDownRawX = event.getRawX();
                 break;
-            case MotionEvent.ACTION_MOVE:
-                if (mTouchDownNavHidden && (mTouchDownRawY - event.getRawY()) > dpToPx(48)) {
-                    showNavBar();
-                    mTouchDownNavHidden = false;
+            case MotionEvent.ACTION_UP: {
+                float dy = event.getRawY() - mTouchDownRawY;
+                float dx = event.getRawX() - mTouchDownRawX;
+                if (Math.abs(dy) < dpToPx(70) || Math.abs(dy) <= Math.abs(dx))
+                    break;
+                if (dy < 0) {
+                    // Swipe up: reveal the keyboard.
+                    if (anlandKeyboard != null && anlandKeyboard.getVisibility() != View.VISIBLE)
+                        toggleVirtualKeyboard();
+                } else {
+                    // Swipe down: hide the keyboard.
+                    if (anlandKeyboard != null && anlandKeyboard.getVisibility() == View.VISIBLE)
+                        toggleVirtualKeyboard();
                 }
                 break;
+            }
             default:
                 break;
         }

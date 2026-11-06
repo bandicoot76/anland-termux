@@ -117,9 +117,9 @@ public final class AnlandKeyboardHost extends FrameLayout {
         mMenuBtn = new android.widget.TextView(context);
         mMenuBtn.setText("☰");
         mMenuBtn.setTextColor(0xFFFFFFFF);
-        mMenuBtn.setTextSize(16);
+        mMenuBtn.setTextSize(14);
         mMenuBtn.setGravity(Gravity.CENTER);
-        mMenuBtn.setPadding(dp(10), dp(4), dp(10), dp(4));
+        mMenuBtn.setPadding(dp(8), dp(2), dp(8), dp(2));
         mMenuBtn.setBackgroundColor(0x55000000);
         mMenuBtn.setOnClickListener(v -> showSettingsMenu());
 
@@ -295,10 +295,18 @@ public final class AnlandKeyboardHost extends FrameLayout {
         LinearLayout clip = new LinearLayout(getContext());
         clip.setOrientation(LinearLayout.HORIZONTAL);
         clip.setGravity(Gravity.CENTER);
+        clip.addView(menuAction("Cut", () -> { popup.dismiss(); sendClipChord(KeyEvent.KEYCODE_X); }));
         clip.addView(menuAction("Copy", () -> { popup.dismiss(); sendClipChord(KeyEvent.KEYCODE_C); }));
         clip.addView(menuAction("Paste", () -> { popup.dismiss(); sendClipChord(KeyEvent.KEYCODE_V); }));
-        clip.addView(menuAction("Select all", () -> { popup.dismiss(); sendClipChord(KeyEvent.KEYCODE_A); }));
+        clip.addView(menuAction("All", () -> { popup.dismiss(); sendClipChord(KeyEvent.KEYCODE_A); }));
         panel.addView(clip);
+
+        LinearLayout clip2 = new LinearLayout(getContext());
+        clip2.setOrientation(LinearLayout.HORIZONTAL);
+        clip2.setGravity(Gravity.CENTER);
+        clip2.addView(menuAction("Undo", () -> { popup.dismiss(); sendClipChord(KeyEvent.KEYCODE_Z); }));
+        clip2.addView(menuAction("Redo", () -> { popup.dismiss(); sendClipChord(KeyEvent.KEYCODE_Y); }));
+        panel.addView(clip2);
 
         panel.addView(makeMenuRow("Layout", getLayoutLabel(), () -> {
             popup.dismiss();
@@ -520,7 +528,8 @@ public final class AnlandKeyboardHost extends FrameLayout {
 
         int menuW = mMenuBtn.getMeasuredWidth();
         int menuH = mMenuBtn.getMeasuredHeight();
-        mMenuBtn.layout(dp(4), handleH + dp(4), dp(4) + menuW, handleH + dp(4) + menuH);
+        // Place in the top drag-handle strip (not over the key rows) so it never covers keys.
+        mMenuBtn.layout(dp(2), dp(2), dp(2) + menuW, dp(2) + menuH);
 
         int grip = dp(GRIP_DP);
         mResizeGrip.layout(width - grip, height - grip, width, height);
