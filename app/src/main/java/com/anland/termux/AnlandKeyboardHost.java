@@ -1,10 +1,14 @@
 package com.anland.termux;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.PopupWindow;
+import android.widget.TextView;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -53,7 +57,6 @@ public final class AnlandKeyboardHost extends FrameLayout {
     private static final float DOCKED_HEIGHT_FRACTION_LANDSCAPE = 0.55f;
 
     private final AnlandKeyboardBridge mBridge;
-    private final Theme.Palette mPalette;
     private Keyboard2View mKeyboard;
     private final View mDragHandle;
     private final View mResizeGrip;
@@ -67,6 +70,11 @@ public final class AnlandKeyboardHost extends FrameLayout {
     /** User-set floating width in dp; 0 means "auto" (bounded by parent). */
     private int mFloatingWidthDp;
 
+    // Settings currently reachable from the keyboard's config key, persisted per-device.
+    private boolean mNumberRowEnabled;
+    private boolean mHapticsEnabled;
+    private String mThemeMode = "dark";
+
     public AnlandKeyboardHost(Context context) {
         super(context);
         setClipChildren(false);
@@ -74,7 +82,6 @@ public final class AnlandKeyboardHost extends FrameLayout {
         setVisibility(GONE);
 
         mBridge = new AnlandKeyboardBridge();
-        mPalette = buildDarkPalette();
         mOrientation = context.getResources().getConfiguration().orientation;
 
         mLayoutRing = new ArrayList<>();
@@ -87,6 +94,11 @@ public final class AnlandKeyboardHost extends FrameLayout {
         mModalNumeric = false;
         mFloating = false;
         mFloatingWidthDp = 0;
+
+        SharedPreferences prefs = context.getSharedPreferences("anland_book_keyboard", Context.MODE_PRIVATE);
+        mNumberRowEnabled = prefs.getBoolean("number_row", false);
+        mHapticsEnabled = prefs.getBoolean("haptics", true);
+        mThemeMode = prefs.getString("theme", "dark");
 
         buildKeyboardView();
 
@@ -128,6 +140,9 @@ public final class AnlandKeyboardHost extends FrameLayout {
             }
             @Override public void hideKeyboard() {
                 setVisibility(View.GONE);
+            }
+            @Override public void openSettings() {
+                showSettingsMenu();
             }
         });
     }
@@ -178,9 +193,13 @@ public final class AnlandKeyboardHost extends FrameLayout {
         b.maxKeyboardHeightFraction = landscape
                 ? DOCKED_HEIGHT_FRACTION_LANDSCAPE
                 : DOCKED_HEIGHT_FRACTION_PORTRAIT;
+        b.addNumberRow = mNumberRowEnabled;
+        b.hapticEnabled = mHapticsEnabled;
+        b.keySoundEnabled = false;
         Config config = b.build();
 
-        Keyboard2View keyboard = new Keyboard2View(getContext(), config, mPalette);
+        Theme.Palette palette = "light".equals(mThemeMode) ? buildLightPalette() : buildDarkPalette();
+        Keyboard2View keyboard = new Keyboard2View(getContext(), config, palette);
         keyboard.setKeyboard(data);
 
         int insertAt = 0;
@@ -219,6 +238,110 @@ public final class AnlandKeyboardHost extends FrameLayout {
                 0xFF1B1B1B, 0xFF333333, 0xFF262626, 0xFF2B2B2B, 0xFF1B1B1B,
                 0xFFFFFFFF, 0xFFCCCCCC, 0xFF3399FF, 0xFFFFFFFF, 0xFF33CC33,
                 0xFF404040, true, 1.0f, 5.0f, 0.97f);
+    }
+
+    /** A light palette mirroring the dark one, for the theme toggle in keyboard settings. */
+    private static Theme.Palette buildLightPalette() {
+        return new Theme.Palette(
+                0xFFE3E3E3, 0xFFCCCCCC, 0xFFD9D9D9, 0xFFDEDEDE, 0xFFE3E3E3,
+                0xFF000000, 0xFF333333, 0xFF0066CC, 0xFF000000, 0xFF33CC33,
+                0xFFAAAAAA, true, 0.6f, 5.0f, 1.0f);
+    }
+
+    /**
+     * Keyboard settings menu, mirroring the subset of termux-launcher's keyboard
+     * preferences that apply to Anland: layout, theme, number row, and haptics.
+     */
+    private void showSettingsMenu() {
+        final PopupWindow popup = new PopupWindow(this);
+        LinearLayout panel = new LinearLayout(getContext());
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackgroundColor(0xEE1B1B1B);
+
+        TextView title = new TextView(getContext());
+        title.setText("Keyboard");
+        title.setTextColor(0xFFFFFFFF);
+        title.setTextSize(16);
+        title.setPadding(dp(16), dp(14), dp(16), dp(6));
+        panel.addView(title);
+
+        panel.addView(makeMenuRow("Layout", getLayoutLabel(), () -> {
+            popup.dismiss();
+            switchLayout();
+        }));
+        panel.addView(makeMenuRow("Theme", mThemeMode, () -> {
+            popup.dismiss();
+            mThemeMode = "dark".equals(mThemeMode) ? "light" : "dark";
+            persistSetting("theme", mThemeMode);
+            buildKeyboardView();
+            requestLayout();
+        }));
+        panel.addView(makeMenuRow("Number row", mNumberRowEnabled ? "On" : "Off", () -> {
+            popup.dismiss();
+            mNumberRowEnabled = !mNumberRowEnabled;
+            persistSetting("number_row", mNumberRowEnabled);
+            buildKeyboardView();
+            requestLayout();
+        }));
+        panel.addView(makeMenuRow("Haptics", mHapticsEnabled ? "On" : "Off", () -> {
+            popup.dismiss();
+            mHapticsEnabled = !mHapticsEnabled;
+            persistSetting("haptics", mHapticsEnabled);
+            buildKeyboardView();
+            requestLayout();
+        }));
+
+        popup.setContentView(panel);
+        popup.setWidth(dp(280));
+        popup.setHeight(LinearLayout.LayoutParams.WRAP_CONTENT);
+        popup.setFocusable(true);
+        popup.setOutsideTouchable(true);
+        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0));
+        // Anchor near the top of the keyboard, centred.
+        popup.showAtLocation(this, Gravity.CENTER, 0, -dp(40));
+    }
+
+    private View makeMenuRow(String label, String value, Runnable onClick) {
+        LinearLayout row = new LinearLayout(getContext());
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), dp(12), dp(16), dp(12));
+
+        TextView l = new TextView(getContext());
+        l.setText(label);
+        l.setTextColor(0xFFFFFFFF);
+        l.setTextSize(15);
+        row.addView(l, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView v = new TextView(getContext());
+        v.setText(value);
+        v.setTextColor(0xFF999999);
+        v.setTextSize(14);
+        row.addView(v);
+
+        row.setOnClickListener(clk -> onClick.run());
+        return row;
+    }
+
+    private String getLayoutLabel() {
+        if (mModalNumeric)
+            return "Numeric";
+        int resId = mLayoutRing.get(mRingIndex);
+        if (resId == R.xml.termux_launcher_qwerty) return "Termux QWERTY";
+        if (resId == R.xml.latn_qwerty_us) return "QWERTY (US)";
+        if (resId == R.xml.latn_colemak) return "Colemak";
+        if (resId == R.xml.latn_dvorak) return "Dvorak";
+        return "Custom";
+    }
+
+    private void persistSetting(String key, boolean value) {
+        getContext().getSharedPreferences("anland_book_keyboard", Context.MODE_PRIVATE)
+                .edit().putBoolean(key, value).apply();
+    }
+
+    private void persistSetting(String key, String value) {
+        getContext().getSharedPreferences("anland_book_keyboard", Context.MODE_PRIVATE)
+                .edit().putString(key, value).apply();
     }
 
     // -----------------------------------------------------------------------------------

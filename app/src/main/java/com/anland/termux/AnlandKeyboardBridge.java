@@ -147,6 +147,7 @@ public final class AnlandKeyboardBridge implements Config.IKeyEventHandler {
         void showNumeric();            // SWITCH_NUMERIC
         void showText();               // SWITCH_TEXT / return from a modal pad
         void hideKeyboard();           // CHANGE_METHOD_* / HIDE_SELF
+        void openSettings();           // CONFIG — the layout's settings key
     }
 
     private volatile LayoutController mLayoutController;
@@ -252,6 +253,11 @@ public final class AnlandKeyboardBridge implements Config.IKeyEventHandler {
             case HIDE_SELF: {
                 LayoutController lc = mLayoutController;
                 if (lc != null) lc.hideKeyboard();
+                break;
+            }
+            case CONFIG: {
+                LayoutController lc = mLayoutController;
+                if (lc != null) lc.openSettings();
                 break;
             }
             default:

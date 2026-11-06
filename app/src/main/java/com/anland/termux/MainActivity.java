@@ -194,12 +194,9 @@ public class MainActivity extends Activity
     // Embedded Unexpected-Keyboard host (floating over the Wayland surface).
     private AnlandKeyboardHost anlandKeyboard;
 
-    // Bottom-left control cluster, always visible: show/hide keyboard, switch layout,
-    // and clipboard. Rides up above the keyboard when the keyboard is shown.
+    // Bottom-left control cluster, always visible: show/hide keyboard only.
     private android.widget.LinearLayout bottomControls;
     private android.widget.TextView keyboardToggle;
-    private android.widget.TextView switchLayoutBtn;
-    private android.widget.TextView clipboardBtn;
 
     // ==================== 触摸板相关设置 ====================
     public static final String KEY_TOUCHPAD_MODE = "touchpad_mode";
@@ -384,8 +381,7 @@ public class MainActivity extends Activity
             Gravity.BOTTOM
         ));
 
-        // Bottom-left control cluster, always visible: show/hide keyboard, switch
-        // layout, and a clipboard popup. It rides up above the keyboard when shown.
+        // Bottom-left show/hide keyboard toggle, always visible; rides above the keyboard.
         bottomControls = new android.widget.LinearLayout(this);
         bottomControls.setOrientation(android.widget.LinearLayout.HORIZONTAL);
         bottomControls.setGravity(android.view.Gravity.CENTER_VERTICAL);
@@ -393,12 +389,8 @@ public class MainActivity extends Activity
         bottomControls.setPadding(dpToPx(4), dpToPx(2), dpToPx(4), dpToPx(2));
 
         keyboardToggle = makeControlButton("\u2304", v -> toggleVirtualKeyboard());
-        switchLayoutBtn = makeControlButton("\u21C4", v -> anlandKeyboard.switchLayout());
-        clipboardBtn = makeControlButton("\u2398", v -> openClipboardMenu());
 
         bottomControls.addView(keyboardToggle);
-        bottomControls.addView(switchLayoutBtn);
-        bottomControls.addView(clipboardBtn);
 
         root.addView(bottomControls, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -1315,43 +1307,6 @@ public class MainActivity extends Activity
     private void moveBottomControls(int keyboardHeight) {
         if (bottomControls == null) return;
         bottomControls.setTranslationY(-keyboardHeight);
-    }
-
-    /** Show a small popup menu with Copy / Paste (native clipboard chord to the compositor). */
-    private void openClipboardMenu() {
-        if (clipboardBtn == null) return;
-        android.widget.PopupWindow popup = new android.widget.PopupWindow(this);
-        android.widget.LinearLayout items = new android.widget.LinearLayout(this);
-        items.setOrientation(android.widget.LinearLayout.VERTICAL);
-        items.setBackgroundColor(0xEE1B1B1B);
-
-        android.widget.TextView copy = makeControlButton("Copy", v -> {
-            sendCtrlChord(KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_C));
-            popup.dismiss();
-        });
-        android.widget.TextView paste = makeControlButton("Paste", v -> {
-            sendCtrlChord(KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_V));
-            popup.dismiss();
-        });
-        items.addView(copy);
-        items.addView(paste);
-
-        popup.setContentView(items);
-        popup.setWidth(android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
-        popup.setHeight(android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
-        popup.setFocusable(true);
-        popup.setOutsideTouchable(true);
-        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0));
-        popup.showAsDropDown(clipboardBtn, 0, -dpToPx(96));
-    }
-
-    /** Send Ctrl + key as a down/up chord of evdev scancodes (copy/paste on the surface). */
-    private void sendCtrlChord(int evdev) {
-        if (evdev < 0) return;
-        Native.nativeSendKey(0, 29); // Ctrl down
-        Native.nativeSendKey(0, evdev);
-        Native.nativeSendKey(1, evdev);
-        Native.nativeSendKey(1, 29); // Ctrl up
     }
 
     // Replace the bar with a freshly-parsed one after the user edits the layout in
