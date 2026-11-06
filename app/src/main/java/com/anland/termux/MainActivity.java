@@ -194,8 +194,12 @@ public class MainActivity extends Activity
     // Embedded Unexpected-Keyboard host (floating over the Wayland surface).
     private AnlandKeyboardHost anlandKeyboard;
 
-    // Single show/hide keyboard toggle (^ when shown, v when hidden), bottom-left.
+    // Bottom-left control cluster, always visible: show/hide keyboard, switch layout,
+    // and clipboard. Rides up above the keyboard when the keyboard is shown.
+    private android.widget.LinearLayout bottomControls;
     private android.widget.TextView keyboardToggle;
+    private android.widget.TextView switchLayoutBtn;
+    private android.widget.TextView clipboardBtn;
 
     // ==================== 触摸板相关设置 ====================
     public static final String KEY_TOUCHPAD_MODE = "touchpad_mode";
@@ -380,16 +384,23 @@ public class MainActivity extends Activity
             Gravity.BOTTOM
         ));
 
-        // Single show/hide keyboard toggle, bottom-left; icon ^ (show) / v (hide).
-        keyboardToggle = new android.widget.TextView(this);
-        keyboardToggle.setText("\u2304"); // v (down caret: keyboard hidden, tap to show)
-        keyboardToggle.setTextColor(android.graphics.Color.WHITE);
-        keyboardToggle.setTextSize(22);
-        keyboardToggle.setGravity(android.view.Gravity.CENTER);
-        keyboardToggle.setBackgroundColor(0xAA000000);
-        keyboardToggle.setPadding(dpToPx(14), dpToPx(8), dpToPx(14), dpToPx(8));
-        keyboardToggle.setOnClickListener(v -> MainActivity.this.toggleVirtualKeyboard());
-        root.addView(keyboardToggle, new FrameLayout.LayoutParams(
+        // Bottom-left control cluster, always visible: show/hide keyboard, switch
+        // layout, and a clipboard popup. It rides up above the keyboard when shown.
+        bottomControls = new android.widget.LinearLayout(this);
+        bottomControls.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        bottomControls.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        bottomControls.setBackgroundColor(0xAA000000);
+        bottomControls.setPadding(dpToPx(4), dpToPx(2), dpToPx(4), dpToPx(2));
+
+        keyboardToggle = makeControlButton("\u2304", v -> toggleVirtualKeyboard());
+        switchLayoutBtn = makeControlButton("\u21C4", v -> anlandKeyboard.switchLayout());
+        clipboardBtn = makeControlButton("\u2398", v -> openClipboardMenu());
+
+        bottomControls.addView(keyboardToggle);
+        bottomControls.addView(switchLayoutBtn);
+        bottomControls.addView(clipboardBtn);
+
+        root.addView(bottomControls, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM | Gravity.START
@@ -1264,6 +1275,7 @@ public class MainActivity extends Activity
             anlandKeyboard.setVisibility(View.GONE);
             if (keyboardToggle != null)
                 keyboardToggle.setText("\u2304"); // v : keyboard hidden, tap to show
+            moveBottomControls(0);
         } else {
             Log.d("VirtualKeyboard", "toggle: showing keyboard, mRoot="
                     + mRoot.getWidth() + "x" + mRoot.getHeight());
@@ -1273,12 +1285,73 @@ public class MainActivity extends Activity
                 keyboardToggle.setText("\u2303"); // ^ : keyboard shown, tap to hide
             // Re-position it (in case screen size changed)
             positionVirtualKeyboard();
+            // Lift the control cluster above the keyboard before hiding the IME.
+            anlandKeyboard.post(() -> {
+                int kh = anlandKeyboard.getHeight();
+                moveBottomControls(kh);
+            });
             // Hide the system IME to avoid overlap with the floating keyboard.
             InputMethodManager imm = getSystemService(InputMethodManager.class);
             if (imm != null && getCurrentFocus() != null) {
                 imm.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), 0);
             }
         }
+    }
+
+    /** Build a compact, monospaced control button for the bottom-left cluster. */
+    private android.widget.TextView makeControlButton(String label, View.OnClickListener onClick) {
+        android.widget.TextView b = new android.widget.TextView(this);
+        b.setText(label);
+        b.setTextColor(android.graphics.Color.WHITE);
+        b.setTextSize(20);
+        b.setGravity(android.view.Gravity.CENTER);
+        b.setPadding(dpToPx(12), dpToPx(7), dpToPx(12), dpToPx(7));
+        b.setBackgroundColor(0x00000000);
+        b.setOnClickListener(onClick);
+        return b;
+    }
+
+    /** Translate the bottom-left cluster up by {@code keyboardHeight} so it rides above the keyboard. */
+    private void moveBottomControls(int keyboardHeight) {
+        if (bottomControls == null) return;
+        bottomControls.setTranslationY(-keyboardHeight);
+    }
+
+    /** Show a small popup menu with Copy / Paste (native clipboard chord to the compositor). */
+    private void openClipboardMenu() {
+        if (clipboardBtn == null) return;
+        android.widget.PopupWindow popup = new android.widget.PopupWindow(this);
+        android.widget.LinearLayout items = new android.widget.LinearLayout(this);
+        items.setOrientation(android.widget.LinearLayout.VERTICAL);
+        items.setBackgroundColor(0xEE1B1B1B);
+
+        android.widget.TextView copy = makeControlButton("Copy", v -> {
+            sendCtrlChord(KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_C));
+            popup.dismiss();
+        });
+        android.widget.TextView paste = makeControlButton("Paste", v -> {
+            sendCtrlChord(KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_V));
+            popup.dismiss();
+        });
+        items.addView(copy);
+        items.addView(paste);
+
+        popup.setContentView(items);
+        popup.setWidth(android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        popup.setHeight(android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        popup.setFocusable(true);
+        popup.setOutsideTouchable(true);
+        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0));
+        popup.showAsDropDown(clipboardBtn, 0, -dpToPx(96));
+    }
+
+    /** Send Ctrl + key as a down/up chord of evdev scancodes (copy/paste on the surface). */
+    private void sendCtrlChord(int evdev) {
+        if (evdev < 0) return;
+        Native.nativeSendKey(0, 29); // Ctrl down
+        Native.nativeSendKey(0, evdev);
+        Native.nativeSendKey(1, evdev);
+        Native.nativeSendKey(1, 29); // Ctrl up
     }
 
     // Replace the bar with a freshly-parsed one after the user edits the layout in

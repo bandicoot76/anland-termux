@@ -46,6 +46,11 @@ public final class AnlandKeyboardHost extends FrameLayout {
     private static final float LIFT_THRESHOLD_DP = 12f;
     private static final int MIN_FLOATING_WIDTH_DP = 240;
     private static final int MAX_FLOATING_WIDTH_DP = 640;
+    // Keyboard height as a fraction of the screen height, per orientation. Portrait keeps
+    // roughly the launcher's 42% share; landscape (a short and wide screen) gets more so the
+    // rows stay tall enough to hit, tuned for a 1080x2400 class device like the ROG Phone 8.
+    private static final float DOCKED_HEIGHT_FRACTION_PORTRAIT = 0.42f;
+    private static final float DOCKED_HEIGHT_FRACTION_LANDSCAPE = 0.55f;
 
     private final AnlandKeyboardBridge mBridge;
     private final Theme.Palette mPalette;
@@ -137,6 +142,16 @@ public final class AnlandKeyboardHost extends FrameLayout {
         return mFloating;
     }
 
+    /** Cycle to the next text layout, for the always-visible switch-layout control. */
+    public void switchLayout() {
+        mModalNumeric = false;
+        int n = mLayoutRing.size();
+        if (n == 0) return;
+        mRingIndex = (mRingIndex + 1) % n;
+        buildKeyboardView();
+        requestLayout();
+    }
+
     // -----------------------------------------------------------------------------------
     // Layout building
     // -----------------------------------------------------------------------------------
@@ -155,7 +170,16 @@ public final class AnlandKeyboardHost extends FrameLayout {
         if (data == null)
             throw new IllegalStateException("No keyboard layout could be loaded");
 
-        Config config = new Config(getResources(), mBridge);
+        // Build the config with a height fraction per orientation so the keyboard is sized
+        // to the screen (portrait vs landscape) rather than using a fixed row height.
+        boolean landscape = getResources().getConfiguration().orientation
+                == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+        Config.Builder b = new Config.Builder(getResources(), mBridge);
+        b.maxKeyboardHeightFraction = landscape
+                ? DOCKED_HEIGHT_FRACTION_LANDSCAPE
+                : DOCKED_HEIGHT_FRACTION_PORTRAIT;
+        Config config = b.build();
+
         Keyboard2View keyboard = new Keyboard2View(getContext(), config, mPalette);
         keyboard.setKeyboard(data);
 
