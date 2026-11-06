@@ -138,6 +138,23 @@ public final class AnlandKeyboardBridge implements Config.IKeyEventHandler {
             Native.nativeSendTextInput(text.getBytes(StandardCharsets.UTF_8));
     }
 
+    /**
+     * Host hook for layout-switch gestures (the space bar / Ctrl-key swipes). The keyboard
+     * itself never changes layouts; it only reports the resolved {@link KeyValue.Event}.
+     */
+    public interface LayoutController {
+        void cycleLayout(int delta);   // SWITCH_FORWARD (+1) / SWITCH_BACKWARD (-1)
+        void showNumeric();            // SWITCH_NUMERIC
+        void showText();               // SWITCH_TEXT / return from a modal pad
+        void hideKeyboard();           // CHANGE_METHOD_* / HIDE_SELF
+    }
+
+    private volatile LayoutController mLayoutController;
+
+    public void setLayoutController(LayoutController controller) {
+        mLayoutController = controller;
+    }
+
     // -----------------------------------------------------------------------------------
     // Dispatch
     // -----------------------------------------------------------------------------------
@@ -157,10 +174,7 @@ public final class AnlandKeyboardBridge implements Config.IKeyEventHandler {
                     strokeKeyevent(KeyEvent.KEYCODE_DEL, ctrl, alt, shift, meta);
                 break;
             case Event:
-                if (v.getEvent() == KeyValue.Event.ACTION)
-                    strokeKeyevent(KeyEvent.KEYCODE_ENTER, ctrl, alt, shift, meta);
-                else if (v.getEvent() == KeyValue.Event.CAPS_LOCK)
-                    tapKeyevent(KeyEvent.KEYCODE_CAPS_LOCK);
+                dispatchEvent(v.getEvent());
                 break;
             case String:
                 Native.nativeSendTextInput(v.getString().getBytes(StandardCharsets.UTF_8));
@@ -201,6 +215,48 @@ public final class AnlandKeyboardBridge implements Config.IKeyEventHandler {
             return;
         Native.nativeSendKey(0, evdev);
         Native.nativeSendKey(1, evdev);
+    }
+
+    /** Resolve a keyboard UI event: Enter, CapsLock, or a layout-switch gesture. */
+    private void dispatchEvent(KeyValue.Event event) {
+        switch (event) {
+            case ACTION:
+                tapKeyevent(KeyEvent.KEYCODE_ENTER);
+                break;
+            case CAPS_LOCK:
+                tapKeyevent(KeyEvent.KEYCODE_CAPS_LOCK);
+                break;
+            case SWITCH_FORWARD: {
+                LayoutController lc = mLayoutController;
+                if (lc != null) lc.cycleLayout(1);
+                break;
+            }
+            case SWITCH_BACKWARD: {
+                LayoutController lc = mLayoutController;
+                if (lc != null) lc.cycleLayout(-1);
+                break;
+            }
+            case SWITCH_NUMERIC: {
+                LayoutController lc = mLayoutController;
+                if (lc != null) lc.showNumeric();
+                break;
+            }
+            case SWITCH_TEXT: {
+                LayoutController lc = mLayoutController;
+                if (lc != null) lc.showText();
+                break;
+            }
+            case CHANGE_METHOD_PICKER:
+            case CHANGE_METHOD_PREV:
+            case CHANGE_METHOD_NEXT:
+            case HIDE_SELF: {
+                LayoutController lc = mLayoutController;
+                if (lc != null) lc.hideKeyboard();
+                break;
+            }
+            default:
+                break; // SWITCH_EMOJI / clipboard / voice / greekmath are not wired.
+        }
     }
 
     /** Expands a macro such as the Fn-layer ^C = [Ctrl, c] into one modifier-chord. */

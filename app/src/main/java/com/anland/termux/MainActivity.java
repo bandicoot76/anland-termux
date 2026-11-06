@@ -370,14 +370,14 @@ public class MainActivity extends Activity
             .getBoolean(KEY_KEYBOARD_FLOATING, true);
         buildExtraKeysBar();
 
-        // Embedded Unexpected-Keyboard (floating; hidden initially). Replaces the old
-        // VirtualKeyboardView. Key events are bridged to evdev scancodes internally.
+        // Embedded Unexpected-Keyboard, docked full-width at the bottom by default,
+        // liftable to floating via its top handle. Key events bridge to evdev scancodes.
         anlandKeyboard = new AnlandKeyboardHost(this);
         anlandKeyboard.setVisibility(View.GONE);
         root.addView(anlandKeyboard, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.NO_GRAVITY
+            Gravity.BOTTOM
         ));
 
         // Floating control bar (keyboard toggle + copy/paste), top-right by default.
@@ -604,37 +604,30 @@ public class MainActivity extends Activity
     // Positions the embedded keyboard at bottom-center; retries while visible.
     private void positionVirtualKeyboard() {
         if (anlandKeyboard == null) return;
+        // The docked mode is positioned by the parent (Gravity.BOTTOM, full width); only the
+        // floating mode needs a manual clamp.
+        if (!anlandKeyboard.isFloating())
+            return;
         int w = anlandKeyboard.getMeasuredWidth();
         int h = anlandKeyboard.getMeasuredHeight();
         if (w <= 0 || h <= 0) {
-            // Only retry while the keyboard is actually visible. A GONE view is
-            // never measured (width/height stay 0), so reposting unconditionally
-            // would re-queue this Runnable on the main thread every frame forever.
             if (anlandKeyboard.getVisibility() == View.VISIBLE) {
                 anlandKeyboard.post(this::positionVirtualKeyboard);
             }
             return;
         }
-        // Use the root layout's dimensions instead of DisplayMetrics so that
-        // positioning is correct in freeform / small-window mode.
         int parentW = mRoot.getWidth();
         int parentH = mRoot.getHeight();
         if (parentW <= 0 || parentH <= 0) {
-            // Root not laid out yet — retry next frame.
             if (anlandKeyboard.getVisibility() == View.VISIBLE) {
                 anlandKeyboard.post(this::positionVirtualKeyboard);
             }
             return;
         }
-        float x = (parentW - w) / 2f;
-        float y = parentH - h - dpToPx(50);
-        // Clamp to visible area.
-        x = Math.max(0, Math.min(x, parentW - w));
-        y = Math.max(0, Math.min(y, parentH - h));
+        float x = Math.max(0, Math.min(anlandKeyboard.getX(), parentW - w));
+        float y = Math.max(0, Math.min(anlandKeyboard.getY(), parentH - h));
         anlandKeyboard.setX(x);
         anlandKeyboard.setY(y);
-        Log.d("VirtualKeyboard", "positionVirtualKeyboard: x=" + x + ", y=" + y
-                + " parent=" + parentW + "x" + parentH + " view=" + w + "x" + h);
     }
 
     private int dpToPx(int dp) {
