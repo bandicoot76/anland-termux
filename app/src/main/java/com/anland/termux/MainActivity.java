@@ -1176,21 +1176,9 @@ public class MainActivity extends Activity
     private void relayout() {
         boolean barVisible = extraKeysBar != null && extraKeysBar.getVisibility() == View.VISIBLE;
         int barH = barVisible ? mBarHeight : 0;
-
-        // Embedded keyboard height, when it is docked (not floating) and visible: the
-        // surface must shrink above it so the desktop is never covered.
-        int dockedKbH = 0;
-        if (anlandKeyboard != null
-                && !anlandKeyboard.isFloating()
-                && anlandKeyboard.getVisibility() == View.VISIBLE) {
-            dockedKbH = anlandKeyboard.getHeight();
-        }
-
-        // Floating keyboard overlays the display (target 0); a docked keyboard + bar
-        // shrink the surface above them.
-        int target = (mKeyboardFloating && dockedKbH == 0)
-                ? 0
-                : Math.max(mImeBottom + barH, dockedKbH);
+        // Floating mode: keyboard + bar overlay the display, so the surface keeps
+        // its full size (target 0). Default mode: shrink the surface above both.
+        int target = mKeyboardFloating ? 0 : (mImeBottom + barH);
 
         FrameLayout.LayoutParams lp =
             (FrameLayout.LayoutParams) surfaceView.getLayoutParams();
