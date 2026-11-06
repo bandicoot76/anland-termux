@@ -81,6 +81,8 @@ public final class AnlandKeyboardHost extends FrameLayout {
     private boolean mNumberRowEnabled;
     private boolean mHapticsEnabled;
     private String mThemeMode = "dark";
+    // A user-edited layout string, or null to use the bundled template.
+    private String mCustomLayout;
 
     public AnlandKeyboardHost(Context context) {
         super(context);
@@ -99,6 +101,7 @@ public final class AnlandKeyboardHost extends FrameLayout {
         mNumberRowEnabled = prefs.getBoolean("number_row", false);
         mHapticsEnabled = prefs.getBoolean("haptics", true);
         mThemeMode = prefs.getString("theme", "dark");
+        mCustomLayout = prefs.getString("custom_layout", null);
 
         buildKeyboardView();
 
@@ -185,11 +188,14 @@ public final class AnlandKeyboardHost extends FrameLayout {
     }
 
     private void buildKeyboardView() {
-        int resId = TEMPLATES.get(mTemplateIndex);
-
-        // All three swipe templates are text layouts; loadTextLayout enables their
-        // loc-slot extra keys.
-        KeyboardData data = loadTextLayout(resId);
+        KeyboardData data;
+        if (mCustomLayout != null) {
+            // A user-edited layout overrides the bundled template until cleared.
+            data = KeyboardData.load_string(mCustomLayout);
+        } else {
+            int resId = TEMPLATES.get(mTemplateIndex);
+            data = loadTextLayout(resId);
+        }
         if (data == null)
             data = KeyboardData.load(getResources(), R.xml.termux_launcher_qwerty);
         if (data == null)
@@ -295,6 +301,10 @@ public final class AnlandKeyboardHost extends FrameLayout {
             buildKeyboardView();
             requestLayout();
         }));
+        panel.addView(makeMenuRow("Edit layout", mCustomLayout != null ? "Custom" : getLayoutLabel(), () -> {
+            popup.dismiss();
+            showLayoutEditor();
+        }));
 
         popup.setContentView(panel);
         popup.setWidth(dp(280));
@@ -328,11 +338,75 @@ public final class AnlandKeyboardHost extends FrameLayout {
     }
 
     private String getLayoutLabel() {
+        if (mCustomLayout != null) return "Custom";
         int resId = TEMPLATES.get(mTemplateIndex);
         if (resId == R.xml.termux_launcher_qwerty) return "QWERTY (Termux Launcher)";
         if (resId == R.xml.latn_qwerty_us) return "QWERTY (US)";
         if (resId == R.xml.latn_dvorak) return "Dvorak";
         return "Layout";
+    }
+
+    /** Read the active layout's XML source (the custom string or the bundled asset copy). */
+    private String currentLayoutXml() {
+        if (mCustomLayout != null)
+            return mCustomLayout;
+        int resId = TEMPLATES.get(mTemplateIndex);
+        String asset;
+        if (resId == R.xml.termux_launcher_qwerty) asset = "keyboard/termux_launcher_qwerty.xml";
+        else if (resId == R.xml.latn_qwerty_us) asset = "keyboard/latn_qwerty_us.xml";
+        else if (resId == R.xml.latn_dvorak) asset = "keyboard/latn_dvorak.xml";
+        else asset = "keyboard/termux_launcher_qwerty.xml";
+        try {
+            java.io.InputStream in = getContext().getAssets().open(asset);
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) > 0)
+                out.write(buf, 0, n);
+            in.close();
+            return out.toString("UTF-8");
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /** A text dialog to edit the keyboard layout XML; Apply parses and hot-swaps it. */
+    private void showLayoutEditor() {
+        final android.widget.EditText editor = new android.widget.EditText(getContext());
+        editor.setText(currentLayoutXml());
+        editor.setGravity(Gravity.TOP | Gravity.START);
+        editor.setTextColor(0xFFFFFFFF);
+        editor.setBackgroundColor(0xFF101010);
+        editor.setPadding(dp(12), dp(12), dp(12), dp(12));
+        editor.setHorizontallyScrolling(false);
+
+        android.widget.ScrollView scroll = new android.widget.ScrollView(getContext());
+        scroll.addView(editor, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+
+        new android.app.AlertDialog.Builder(getContext())
+                .setTitle("Edit layout (XML)")
+                .setView(scroll)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setNeutralButton("Reset", (d, w) -> {
+                    mCustomLayout = null;
+                    persistSetting("custom_layout", (String) null);
+                    rebuildAndRequestLayout();
+                    announceLayout();
+                })
+                .setPositiveButton("Apply", (d, w) -> {
+                    String src = editor.getText().toString();
+                    KeyboardData parsed = KeyboardData.load_string(src);
+                    if (parsed == null) {
+                        Toast.makeText(getContext(), "Layout parse failed", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    mCustomLayout = src;
+                    persistSetting("custom_layout", src);
+                    rebuildAndRequestLayout();
+                    announceLayout();
+                })
+                .show();
     }
 
     private void persistSetting(String key, boolean value) {
