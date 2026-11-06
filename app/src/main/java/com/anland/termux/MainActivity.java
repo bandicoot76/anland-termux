@@ -191,8 +191,8 @@ public class MainActivity extends Activity
 
     public static MainActivity sInstance;
 
-    // ADDED: VirtualKeyboardView instance
-    private VirtualKeyboardView virtualKeyboardView;
+    // Embedded Unexpected-Keyboard host (floating over the Wayland surface).
+    private AnlandKeyboardHost anlandKeyboard;
 
     // ==================== 触摸板相关设置 ====================
     public static final String KEY_TOUCHPAD_MODE = "touchpad_mode";
@@ -367,21 +367,11 @@ public class MainActivity extends Activity
             .getBoolean(KEY_KEYBOARD_FLOATING, true);
         buildExtraKeysBar();
 
-        // ADDED: Create VirtualKeyboardView (hidden initially)
-        virtualKeyboardView = new VirtualKeyboardView(this);
-        virtualKeyboardView.setVisibility(View.GONE);
-        virtualKeyboardView.setOnKeyEventListener(new VirtualKeyboardView.OnKeyEventListener() {
-            @Override
-            public void onKeyDown(int scanCode) {
-                Native.nativeSendKey(0, scanCode);
-            }
-            @Override
-            public void onKeyUp(int scanCode) {
-                Native.nativeSendKey(1, scanCode);
-            }
-        });
-        // Add to root with no gravity – we will position manually.
-        root.addView(virtualKeyboardView, new FrameLayout.LayoutParams(
+        // Embedded Unexpected-Keyboard (floating; hidden initially). Replaces the old
+        // VirtualKeyboardView. Key events are bridged to evdev scancodes internally.
+        anlandKeyboard = new AnlandKeyboardHost(this);
+        anlandKeyboard.setVisibility(View.GONE);
+        root.addView(anlandKeyboard, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.NO_GRAVITY
@@ -427,8 +417,8 @@ public class MainActivity extends Activity
             Log.d("VirtualKeyboard", "root layout changed: " + newW + "x" + newH
                     + " (was " + oldW + "x" + oldH + ")");
             if (newW != oldW || newH != oldH) {
-                if (virtualKeyboardView != null
-                        && virtualKeyboardView.getVisibility() == View.VISIBLE) {
+                if (anlandKeyboard != null
+                        && anlandKeyboard.getVisibility() == View.VISIBLE) {
                     positionVirtualKeyboard();
                 }
             }
@@ -495,7 +485,7 @@ public class MainActivity extends Activity
         systemIme.releaseHiddenInput();
         WindowInsetsController controller = getWindow().getInsetsController();
         if (controller != null) controller.hide(WindowInsets.Type.ime());
-        virtualKeyboardView.setVisibility(View.GONE);
+        anlandKeyboard.setVisibility(View.GONE);
         setExtraKeysBarVisible(false);
         mHudOverlay.reset();
         mHudOverlay.loadProfile();
@@ -596,18 +586,17 @@ public class MainActivity extends Activity
         }
     }
 
-    // ADDED: Helper to position virtual keyboard at bottom-center
+    // Positions the embedded keyboard at bottom-center; retries while visible.
     private void positionVirtualKeyboard() {
-        if (virtualKeyboardView == null) return;
-        int w = virtualKeyboardView.getMeasuredWidth();
-        int h = virtualKeyboardView.getMeasuredHeight();
+        if (anlandKeyboard == null) return;
+        int w = anlandKeyboard.getMeasuredWidth();
+        int h = anlandKeyboard.getMeasuredHeight();
         if (w <= 0 || h <= 0) {
             // Only retry while the keyboard is actually visible. A GONE view is
             // never measured (width/height stay 0), so reposting unconditionally
-            // would re-queue this Runnable on the main thread every frame forever
-            // and cause global jank/卡顿 even while the keyboard is hidden.
-            if (virtualKeyboardView.getVisibility() == View.VISIBLE) {
-                virtualKeyboardView.post(this::positionVirtualKeyboard);
+            // would re-queue this Runnable on the main thread every frame forever.
+            if (anlandKeyboard.getVisibility() == View.VISIBLE) {
+                anlandKeyboard.post(this::positionVirtualKeyboard);
             }
             return;
         }
@@ -617,8 +606,8 @@ public class MainActivity extends Activity
         int parentH = mRoot.getHeight();
         if (parentW <= 0 || parentH <= 0) {
             // Root not laid out yet — retry next frame.
-            if (virtualKeyboardView.getVisibility() == View.VISIBLE) {
-                virtualKeyboardView.post(this::positionVirtualKeyboard);
+            if (anlandKeyboard.getVisibility() == View.VISIBLE) {
+                anlandKeyboard.post(this::positionVirtualKeyboard);
             }
             return;
         }
@@ -627,8 +616,8 @@ public class MainActivity extends Activity
         // Clamp to visible area.
         x = Math.max(0, Math.min(x, parentW - w));
         y = Math.max(0, Math.min(y, parentH - h));
-        virtualKeyboardView.setX(x);
-        virtualKeyboardView.setY(y);
+        anlandKeyboard.setX(x);
+        anlandKeyboard.setY(y);
         Log.d("VirtualKeyboard", "positionVirtualKeyboard: x=" + x + ", y=" + y
                 + " parent=" + parentW + "x" + parentH + " view=" + w + "x" + h);
     }
@@ -978,16 +967,16 @@ public class MainActivity extends Activity
         if (isInPictureInPictureMode) {
             setExtraKeysBarVisible(false);
             setHudOverlayVisible(false);
-            mVirtualKeyboardVisibleBeforePip = virtualKeyboardView != null
-                && virtualKeyboardView.getVisibility() == View.VISIBLE;
+            mVirtualKeyboardVisibleBeforePip = anlandKeyboard != null
+                && anlandKeyboard.getVisibility() == View.VISIBLE;
             if (mVirtualKeyboardVisibleBeforePip)
-                virtualKeyboardView.setVisibility(View.GONE);
+                anlandKeyboard.setVisibility(View.GONE);
         } else {
             setExtraKeysBarVisible(shouldShowBar(systemIme.isImeVisible()));
             refreshHudOverlay();
-            if (mVirtualKeyboardVisibleBeforePip && virtualKeyboardView != null) {
-                virtualKeyboardView.setVisibility(View.VISIBLE);
-                virtualKeyboardView.post(this::positionVirtualKeyboard);
+            if (mVirtualKeyboardVisibleBeforePip && anlandKeyboard != null) {
+                anlandKeyboard.setVisibility(View.VISIBLE);
+                anlandKeyboard.post(this::positionVirtualKeyboard);
             }
             mVirtualKeyboardVisibleBeforePip = false;
         }
@@ -1259,14 +1248,14 @@ public class MainActivity extends Activity
     }
 
     private void toggleVirtualKeyboard() {
-        if (virtualKeyboardView == null) return;
-        if (virtualKeyboardView.getVisibility() == View.VISIBLE) {
-            virtualKeyboardView.setVisibility(View.GONE);
+        if (anlandKeyboard == null) return;
+        if (anlandKeyboard.getVisibility() == View.VISIBLE) {
+            anlandKeyboard.setVisibility(View.GONE);
         } else {
             Log.d("VirtualKeyboard", "toggle: showing keyboard, mRoot="
                     + mRoot.getWidth() + "x" + mRoot.getHeight());
-            virtualKeyboardView.setVisibility(View.VISIBLE);
-            virtualKeyboardView.bringToFront();
+            anlandKeyboard.setVisibility(View.VISIBLE);
+            anlandKeyboard.bringToFront();
             // Re-position it (in case screen size changed)
             positionVirtualKeyboard();
             // Hide the system IME to avoid overlap with the floating keyboard.
