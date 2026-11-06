@@ -21,9 +21,9 @@ final class DisplayCutoutMode {
         if (stored instanceof String && isValid((String) stored))
             return (String) stored;
 
-        String mode = stored instanceof Boolean && !((Boolean) stored)
-            ? HIDE_NONE
-            : HIDE_ALL;
+        // Any stored value that is not a valid mode (including a legacy boolean pref)
+        // defaults to drawing under all cutouts, so the desktop reaches the punch hole.
+        String mode = HIDE_ALL;
         if (stored != null)
             prefs.edit().putString(KEY, mode).apply();
         return mode;

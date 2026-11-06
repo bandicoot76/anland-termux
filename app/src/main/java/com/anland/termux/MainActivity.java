@@ -385,7 +385,7 @@ public class MainActivity extends Activity
         );
         // Lift the docked keyboard above the gesture/navigation zone so its bottom
         // row is not cut off (ROG Phone 8). Floating mode positions itself via X/Y.
-        kbLp.bottomMargin = dpToPx(18);
+        kbLp.bottomMargin = dpToPx(28);
         root.addView(anlandKeyboard, kbLp);
 
         // Bottom-left show/hide keyboard toggle, always visible; rides above the keyboard.
