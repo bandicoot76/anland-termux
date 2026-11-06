@@ -194,6 +194,9 @@ public class MainActivity extends Activity
     // Embedded Unexpected-Keyboard host (floating over the Wayland surface).
     private AnlandKeyboardHost anlandKeyboard;
 
+    // Floating control bar: keyboard toggle + copy/paste.
+    private AnlandNavBar navBar;
+
     // ==================== 触摸板相关设置 ====================
     public static final String KEY_TOUCHPAD_MODE = "touchpad_mode";
     public static final String KEY_MOUSE_ACCEL = "mouse_speed"; // 名称仍为 speed，实际控制加速度强度
@@ -375,6 +378,18 @@ public class MainActivity extends Activity
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.NO_GRAVITY
+        ));
+
+        // Floating control bar (keyboard toggle + copy/paste), top-right by default.
+        navBar = new AnlandNavBar(this, new AnlandNavBar.NavListener() {
+            @Override public void toggleKeyboard() { MainActivity.this.toggleVirtualKeyboard(); }
+            @Override public void copy() { sendCtrlChord(KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_C)); }
+            @Override public void paste() { sendCtrlChord(KeyCodeMapper.getScanCode(KeyEvent.KEYCODE_V)); }
+        });
+        root.addView(navBar, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP | Gravity.END
         ));
         mHudOverlay = new HudOverlayView(this,
                 getSharedPreferences(PREFS_NAME, MODE_PRIVATE),
@@ -1264,6 +1279,15 @@ public class MainActivity extends Activity
                 imm.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), 0);
             }
         }
+    }
+
+    /** Send Ctrl + key as a down/up chord of evdev scancodes (copy/paste on the surface). */
+    private void sendCtrlChord(int evdev) {
+        if (evdev < 0) return;
+        Native.nativeSendKey(0, 29); // Ctrl down
+        Native.nativeSendKey(0, evdev);
+        Native.nativeSendKey(1, evdev);
+        Native.nativeSendKey(1, 29); // Ctrl up
     }
 
     // Replace the bar with a freshly-parsed one after the user edits the layout in
